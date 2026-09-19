@@ -1,19 +1,21 @@
 import { keccak256, toHex } from 'viem'
+import raw from './catalogue.data.json'
 
 /**
  * The card table.
  *
+ * Every card in here is a real printing. Names, sets, card numbers, rarities,
+ * artists and scans come from the pokemontcg.io card database; prices are
+ * TCGplayer market prices for that exact printing. Nothing is invented, and
+ * nothing is filled in when the data is missing - `scripts/fetch-catalogue.ts`
+ * refuses to write a card it cannot source. Re-run it with `pnpm catalogue:fetch`.
+ *
  * The contract stores only (tier, cardIndex, grade, serial). What card index 7
- * of tier 4 actually *is* lives here — but the contract commits to
+ * of tier 4 actually *is* lives here - but the contract commits to
  * `catalogueRoot`, the keccak256 of the canonical serialisation below, at
  * deploy time. The app therefore cannot quietly redefine a card after the
  * fact, and anyone can recompute the root and check it against the chain.
- *
- * Card art is generated procedurally from the card name (see CardArt) rather
- * than shipping copyrighted scans.
  */
-
-export type Tier = 0 | 1 | 2 | 3 | 4
 
 export const TIER_NAMES = ['Common', 'Uncommon', 'Rare', 'Holo', 'Grail'] as const
 
@@ -26,72 +28,56 @@ export const TIER_PROBABILITY = ODDS_CUMULATIVE.map(
 )
 
 export interface CardDef {
-  /** Card name as it appears on the slab. */
+  /** pokemontcg.io identifier, e.g. `base1-4`. Pins the exact printing. */
+  id: string
+  /** Card name as it is printed. */
   name: string
   /** Set it was printed in. */
   set: string
+  setId: string
+  /** Collector number within the set. */
+  number: string
   year: number
-  /** Indicative market comp in USD for a PSA 9, used for the floor display. */
-  comp: number
+  /** Rarity as printed on the card - this is what puts it in its tier. */
+  rarity: string
+  artist: string
+  /** The TCGplayer printing the price belongs to, e.g. `1st Edition Holofoil`. */
+  printing: string
+  /**
+   * Raw, ungraded TCGplayer market price in USD for this printing, as of
+   * `CATALOGUE_SOURCE.fetchedAt`.
+   *
+   * This is a RAW price. It is deliberately not adjusted for the grade on the
+   * slab: a graded multiple is a number we would have to invent, and a made-up
+   * multiplier on a real card is still a made-up number. The grade is shown
+   * next to it and left to the reader.
+   */
+  marketRaw: number
+  /** Filename under /cards. */
+  image: string
+  /** Full-size scan, only carried for the tiers that render large. */
+  imageLarge?: string
+  /** Set symbol, shared by every card of that set. */
+  symbol?: string
 }
 
-export const CATALOGUE: CardDef[][] = [
-  // --- Tier 0 : Common -----------------------------------------------------
-  [
-    { name: 'Rattata', set: 'Base Set', year: 1999, comp: 8 },
-    { name: 'Caterpie', set: 'Base Set', year: 1999, comp: 9 },
-    { name: 'Weedle', set: 'Base Set', year: 1999, comp: 9 },
-    { name: 'Pidgey', set: 'Base Set', year: 1999, comp: 10 },
-    { name: 'Magikarp', set: 'Base Set', year: 1999, comp: 14 },
-    { name: 'Voltorb', set: 'Base Set', year: 1999, comp: 11 },
-    { name: 'Diglett', set: 'Base Set', year: 1999, comp: 10 },
-    { name: 'Machop', set: 'Base Set', year: 1999, comp: 12 },
-    { name: 'Bellsprout', set: 'Jungle', year: 1999, comp: 9 },
-    { name: 'Tangela', set: 'Jungle', year: 1999, comp: 11 },
-    { name: 'Meowth', set: 'Jungle', year: 1999, comp: 13 },
-    { name: 'Psyduck', set: 'Fossil', year: 1999, comp: 12 },
-  ],
-  // --- Tier 1 : Uncommon ---------------------------------------------------
-  [
-    { name: 'Charmeleon', set: 'Base Set', year: 1999, comp: 45 },
-    { name: 'Wartortle', set: 'Base Set', year: 1999, comp: 40 },
-    { name: 'Ivysaur', set: 'Base Set', year: 1999, comp: 42 },
-    { name: 'Kadabra', set: 'Base Set', year: 1999, comp: 38 },
-    { name: 'Haunter', set: 'Fossil', year: 1999, comp: 48 },
-    { name: 'Electabuzz', set: 'Base Set', year: 1999, comp: 44 },
-    { name: 'Dragonair', set: 'Base Set', year: 1999, comp: 60 },
-    { name: 'Scyther', set: 'Jungle', year: 1999, comp: 65 },
-    { name: 'Pinsir', set: 'Jungle', year: 1999, comp: 52 },
-    { name: 'Lapras', set: 'Fossil', year: 1999, comp: 58 },
-  ],
-  // --- Tier 2 : Rare -------------------------------------------------------
-  [
-    { name: 'Gyarados', set: 'Base Set', year: 1999, comp: 210 },
-    { name: 'Alakazam', set: 'Base Set', year: 1999, comp: 240 },
-    { name: 'Machamp', set: 'Base Set', year: 1999, comp: 180 },
-    { name: 'Zapdos', set: 'Base Set', year: 1999, comp: 320 },
-    { name: 'Articuno', set: 'Fossil', year: 1999, comp: 290 },
-    { name: 'Moltres', set: 'Fossil', year: 1999, comp: 275 },
-    { name: 'Snorlax', set: 'Jungle', year: 1999, comp: 260 },
-    { name: 'Dragonite', set: 'Fossil', year: 1999, comp: 310 },
-  ],
-  // --- Tier 3 : Holo -------------------------------------------------------
-  [
-    { name: 'Venusaur', set: 'Base Set', year: 1999, comp: 900 },
-    { name: 'Blastoise', set: 'Base Set', year: 1999, comp: 1200 },
-    { name: 'Mewtwo', set: 'Base Set', year: 1999, comp: 850 },
-    { name: 'Raichu', set: 'Base Set', year: 1999, comp: 780 },
-    { name: 'Mew', set: 'Black Star Promo', year: 1999, comp: 1100 },
-    { name: 'Gengar', set: 'Fossil', year: 1999, comp: 820 },
-  ],
-  // --- Tier 4 : Grail ------------------------------------------------------
-  [
-    { name: 'Charizard', set: 'Base Set Shadowless', year: 1999, comp: 14000 },
-    { name: 'Pikachu Illustrator', set: 'CoroCoro Promo', year: 1998, comp: 375000 },
-    { name: 'Blastoise', set: 'Base Set 1st Edition', year: 1999, comp: 22000 },
-    { name: 'Charizard', set: 'Base Set 1st Edition', year: 1999, comp: 62000 },
-  ],
-]
+interface CatalogueData {
+  source: string
+  priceSource: string
+  fetchedAt: string
+  tiers: CardDef[][]
+}
+
+const data = raw as CatalogueData
+
+export const CATALOGUE: CardDef[][] = data.tiers
+
+/** Where the numbers on screen come from, so the UI can say so out loud. */
+export const CATALOGUE_SOURCE = {
+  cards: data.source,
+  prices: data.priceSource,
+  fetchedAt: data.fetchedAt,
+}
 
 export const TIER_SIZES = CATALOGUE.map((t) => t.length) as [
   number,
@@ -106,14 +92,31 @@ export function cardDef(tier: number, cardIndex: number): CardDef {
   return t[cardIndex % t.length]
 }
 
+/** Path to a card's scan. Falls back to the small scan where no large one ships. */
+export function cardImage(def: CardDef, size: 'sm' | 'lg' = 'sm'): string {
+  return `/cards/${size === 'lg' ? (def.imageLarge ?? def.image) : def.image}`
+}
+
+export function setSymbol(def: CardDef): string | undefined {
+  return def.symbol ? `/cards/${def.symbol}` : undefined
+}
+
 /**
  * Canonical serialisation, hashed into `catalogueRoot` onchain.
- * Field order is fixed here on purpose — changing it changes the root.
+ *
+ * Identity only: which card sits at which index. Field order is fixed here on
+ * purpose - changing it changes the root.
+ *
+ * Price is deliberately NOT in here. What the contract needs to be pinned to is
+ * *which card* index 7 of tier 4 is, and that never changes. A market price
+ * does change, constantly, and hashing it would mean every price refresh
+ * invalidated a live deployment - which in practice would mean nobody ever
+ * refreshes the price, and the number on screen quietly goes stale instead.
  */
 export function canonicalCatalogue(): string {
   return JSON.stringify(
     CATALOGUE.map((tier) =>
-      tier.map((c) => [c.name, c.set, c.year, c.comp] as const),
+      tier.map((c) => [c.id, c.name, c.set, c.number, c.year] as const),
     ),
   )
 }
@@ -122,9 +125,7 @@ export function catalogueRoot(): `0x${string}` {
   return keccak256(toHex(canonicalCatalogue()))
 }
 
-/** Indicative USD value of a specific pull, scaled by its grade. */
-export function compValue(tier: number, cardIndex: number, grade: number): number {
-  const base = cardDef(tier, cardIndex).comp
-  const gradeMultiplier: Record<number, number> = { 7: 0.35, 8: 0.6, 9: 1, 10: 3.2 }
-  return Math.round(base * (gradeMultiplier[grade] ?? 1))
+/** Raw market value of a specific card, in USD. See CardDef.marketRaw. */
+export function marketRaw(tier: number, cardIndex: number): number {
+  return cardDef(tier, cardIndex).marketRaw
 }

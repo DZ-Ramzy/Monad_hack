@@ -11,7 +11,8 @@ export interface Pull {
   vaultRef: number
   name: string
   set: string
-  comp: number
+  /** Raw TCGplayer market price, USD. */
+  marketRaw: number
   blockNumber: number
   txHash: Hex
   at: number

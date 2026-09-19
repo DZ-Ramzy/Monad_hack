@@ -19,12 +19,36 @@ That means two transactions: commit, then reveal against a block the buyer
 could not have seen when they committed.
 
 On a 12-second chain that is a **24-second wait** between "I opened the pack"
-and "I see my card". Nobody ships that. Which is why every large gacha —
-including the ones doing hundreds of millions a month — runs its RNG on a
-private server and asks you to trust it.
+and "I see my card". Nobody ships that, so the wait tends to get engineered
+away rather than paid.
 
-At a 400ms block time, commit and reveal are **~800ms apart**. Provable
-fairness becomes compatible with the UX of ripping a pack.
+The closest thing to a reference implementation is Jupiter Gacha on Solana,
+which rips vaulted cards supplied by two providers — and the two providers do
+not solve this the same way:
+
+- **Collector Crypt** packs run an on-chain VRF (`cc-vrf`, RFC 9381 ECVRF)
+  with a per-draw proof, checkable on Solana from a Verify button in the app.
+  That is real. The comfortable claim that everyone at this scale hides the
+  RNG behind a private server is simply not true of them.
+- **Phygitals** packs — Riftbound, Sport, and the Pokemon Trainer pack — run
+  a server-side commit-reveal instead. Jupiter's own docs state that it "does
+  not display the seeds or the hash of a Phygitals draw, and there is no
+  Verify action for these pulls."
+
+So the honest claim is narrower, and it is about **what the proof covers**
+rather than whether a proof exists. Jupiter documents that "odds are per
+rarity tier, not per card," and that "which specific card you receive within
+a tier depends on the current pool contents." The verifiable step picks your
+*tier*. The step that decides *which* Charizard is the machine pool, sitting
+off to one side of the proof.
+
+Here, a single `blockhash(commitBlock + 1)` decides both — tier **and** card
+index — against a `catalogueRoot` fixed at deploy. The provable surface is
+the whole draw, not its first half.
+
+At a 400ms block time, commit and reveal are **~800ms apart**. That is what
+makes paying the two-transaction cost, across the whole draw, compatible with
+the UX of ripping a pack.
 
 Speed alone is not the whole argument, though. A rollup with a single
 sequencer controls transaction ordering, so its operator can influence which
@@ -52,10 +76,22 @@ Honesty about scope matters more than a bigger claim, so:
 Pulls with no matching stock in the vault mint **unbacked**, with `vaultRef == 0`,
 and the UI says so. The contract never pretends a card is backed when it is not.
 
-For reference, the incumbents do not run their own vaults either — they
-integrate PSA, PWCC and ALT, which already served the traditional graded-card
-market. Custody is a business-development problem. The parts that have to be
-onchain are the parts built here.
+For reference, the incumbents do not run their own vaults either — Jupiter
+Gacha integrates Collector Crypt and Phygitals, who in turn sit on PSA Vault,
+Fanatics Vault, Alt Vault and OmniVault, all of which already served the
+traditional graded-card market. Custody is a business-development problem.
+The parts that have to be onchain are the parts built here.
+
+Two places where being small is an advantage rather than an excuse:
+
+- **The buyback is standing, not a window.** Jupiter's instant buyback runs
+  3 days on Collector Crypt pulls and 7 on Phygitals ones, after which the
+  floor is gone. `buybackBps` here is funded from the contract reserve and
+  does not expire, because it is a contract rather than a policy.
+- **The catalogue is frozen, not a live pool.** A machine pool mutates on
+  every pull and every buyback, which is exactly why its contents cannot be
+  committed to in advance. `catalogueRoot` can be, because the card table is
+  fixed at deploy — at the cost of having to redeploy to restock.
 
 ---
 
@@ -118,6 +154,7 @@ pnpm install
 cp .env.example .env          # add DEPLOYER_PK
 pnpm test                     # 49 Foundry tests
 pnpm compile                  # solc-js artifacts for the deploy scripts
+pnpm catalogue:fetch          # real cards + scans (--refresh to repull prices)
 pnpm test:odds                # samples the draw logic, 360k cards
 pnpm deploy                   # writes deployments.json
 
@@ -128,6 +165,7 @@ pnpm wallets:gen              # generate the burner pool
 pnpm wallets:fund             # fund it in one transaction
 pnpm build && pnpm start      # server on :3000
 
+pnpm e2e                      # seal/rip against the live deployment, real latency
 pnpm preflight                # run this before walking on stage
 pnpm bots                     # pre-seed the feed / fallback
 ```
@@ -201,5 +239,17 @@ transaction.
 - `blockhash`-based entropy is influenceable by a block proposer targeting a
   specific user. For production this becomes a VRF or a two-party commit–reveal.
   The latency argument — the thing Monad unlocks — is unchanged either way.
-- Card art is generated procedurally from card names rather than shipping
-  copyrighted scans.
+- The card table is real. Names, sets, collector numbers, rarities, artists and
+  scans come from the [pokemontcg.io](https://pokemontcg.io) database; prices
+  are TCGplayer market prices for that exact printing, raw and ungraded.
+  `pnpm catalogue:fetch` rebuilds it, and refuses to write a card it cannot
+  source rather than filling a gap in. A tier is the rarity actually printed on
+  the card, so "Holo" means the card says Rare Holo.
+- The prices on screen are **raw** prices, not graded ones. A slab's grade is
+  shown next to the price and left to the reader: a graded multiple would be a
+  number we invented, and a made-up multiplier on a real card is still made up.
+- Those scans are third-party images. The cards are the IP of The Pokémon
+  Company, Nintendo, Game Freak and Creatures Inc.; this project is not
+  affiliated with or endorsed by any of them. See `public/cards/SOURCE.md` —
+  this replaced an earlier procedural-art approach that deliberately shipped no
+  copyrighted artwork, and the tradeoff is worth understanding before reuse.

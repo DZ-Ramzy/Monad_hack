@@ -125,6 +125,9 @@ for (const e of entries) {
     `  vaulted  ${def.name.padEnd(20)} ${TIER_NAMES[e.tier].padEnd(9)} ` +
       `${e.grade ? `PSA ${e.grade}` : 'raw  '}  cert ${e.certNumber}`,
   )
+  // Name the exact printing, so the operator can see they deposited the card
+  // they meant to and not a different print of the same Pokemon.
+  console.log(`           ${def.set} #${def.number} · ${def.printing} · ${def.id}`)
   console.log(`           attestation ${attestation}`)
 }
 

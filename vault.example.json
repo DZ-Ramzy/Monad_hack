@@ -1,8 +1,8 @@
 [
   {
-    "label": "The real card in my pocket. Copy this file to vault.json and edit.",
+    "label": "The real card in my pocket. Copy this file to vault.json and edit. tier 0 / cardIndex 6 is Pikachu, Base Set #58 - point this at whatever you actually hold, and check it against `pnpm catalogue:fetch` output.",
     "tier": 0,
-    "cardIndex": 4,
+    "cardIndex": 6,
     "grade": 0,
     "certNumber": 1,
     "photo": "public/vault/card-1.jpg",

@@ -38,6 +38,7 @@ export default function Screen() {
     <div className="screen">
       <header className="screen-top">
         <div className="brand">
+          <span className="brand-logo" aria-hidden="true" />
           <span className="brand-mark">Ripachu</span>
           <span className="brand-sub">provably fair gacha · vaulted cards · monad</span>
         </div>

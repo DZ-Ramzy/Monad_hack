@@ -22,7 +22,7 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { chain, rpcUrl, publicClient, EXPLORER } from '../src/lib/chain.js'
-import { TIER_NAMES, cardDef, compValue } from '../src/lib/catalogue.js'
+import { TIER_NAMES, cardDef, marketRaw } from '../src/lib/catalogue.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const readJson = (p: string) => JSON.parse(readFileSync(join(root, p), 'utf8'))
@@ -123,7 +123,7 @@ for (let n = 0; n < PACKS; n++) {
       const def = cardDef(tier, cardIndex)
       console.log(
         `          ${def.name.padEnd(20)} ${TIER_NAMES[tier].padEnd(9)} PSA ${String(grade).padEnd(2)} ` +
-          `#${String(a.serial).padStart(4, '0')}  $${compValue(tier, cardIndex, grade).toLocaleString().padStart(7)}` +
+          `#${String(a.serial).padStart(4, '0')}  $${marketRaw(tier, cardIndex).toLocaleString().padStart(7)}` +
           (vaultRef ? `  <- VAULTED #${vaultRef}` : ''),
       )
     } catch {

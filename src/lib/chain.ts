@@ -1,4 +1,4 @@
-import { createPublicClient, defineChain, http, type Hex } from 'viem'
+import { createPublicClient, defineChain, http } from 'viem'
 import { monadTestnet } from 'viem/chains'
 
 /**
@@ -18,7 +18,6 @@ export const chain = defineChain({
   },
 })
 
-export const BLOCK_TIME_MS = 400
 export const EXPLORER = monadTestnet.blockExplorers!.default.url
 
 export function rpcUrl(): string {
@@ -30,18 +29,6 @@ export function publicClient(url = rpcUrl()) {
     chain,
     transport: http(url, { batch: { wait: 16 }, retryCount: 2 }),
   })
-}
-
-export function txUrl(hash: Hex): string {
-  return `${EXPLORER}/tx/${hash}`
-}
-
-export function addressUrl(address: string): string {
-  return `${EXPLORER}/address/${address}`
-}
-
-export function shortAddress(address: string): string {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
 /**

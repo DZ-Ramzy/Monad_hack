@@ -65,6 +65,37 @@ export const GAS = {
   buy: 120_000n,
 } as const
 
+/**
+ * Monad's base fee while this was built. Used only to bridge the gap before
+ * the stream delivers a live one - never as a guess over a real reading.
+ */
+export const FALLBACK_GAS_PRICE = 102_000_000_000n
+
+/**
+ * The node reserves maxFeePerGas * gas at admission, so an inflated multiplier
+ * raises the balance every burner needs just to be allowed to send. Monad's
+ * base fee is stable, so 1.15x is ample.
+ */
+const feeCap = (gasPrice: bigint) => (gasPrice * 115n) / 100n
+
+/**
+ * What a wallet must HOLD - not spend - to see a rip through.
+ *
+ * Because the reserve is taken at admission rather than at execution, a burner
+ * is refused before the transaction is even looked at, and it is refused for
+ * both legs separately. Gating on the commit alone is how a wallet ends up
+ * holding a sealed pack it can never open: the buy fits, the reveal does not,
+ * and nothing in the UI can undo it. So the gate covers the whole round trip.
+ */
+export function ripReserve(gasPrice: bigint, packPrice: bigint): bigint {
+  return packPrice + feeCap(gasPrice) * (GAS.buyPack + GAS.revealPack)
+}
+
+/** The same reserve for a pack that is already sealed - reveal only. */
+export function revealReserve(gasPrice: bigint): bigint {
+  return feeCap(gasPrice) * GAS.revealPack
+}
+
 export interface Burner {
   address: Address
   privateKey: Hex
@@ -92,16 +123,25 @@ function store(burner: Burner) {
   }
 }
 
-/** Claims a pre-funded wallet from the pool, or reuses the one already held. */
-export async function claimBurner(): Promise<Burner> {
+/**
+ * Claims a pre-funded wallet from the pool, or reuses the one already held.
+ *
+ * `rotate` abandons the held wallet and asks for a different one. A burner
+ * that can no longer cover a rip is finished - there is no way to spend its
+ * way back - so the only recovery is a fresh key from the pool.
+ */
+export async function claimBurner(opts: { rotate?: boolean } = {}): Promise<Burner> {
   const existing = readStored()
   const res = await fetch('/api/claim', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ address: existing?.address }),
+    body: JSON.stringify({ address: existing?.address, rotate: opts.rotate === true }),
   })
   if (!res.ok) {
-    if (existing) return existing
+    // Reusing the stored wallet is the right answer on a normal boot. It is
+    // the wrong one when rotating: we are rotating BECAUSE that wallet is
+    // spent, so handing it back loops the same failure forever.
+    if (existing && !opts.rotate) return existing
     throw new Error((await res.json().catch(() => ({}))).error ?? 'could not claim a wallet')
   }
   const { privateKey, address } = await res.json()
@@ -110,7 +150,7 @@ export async function claimBurner(): Promise<Burner> {
   return burner
 }
 
-export function makeChain(config: AppConfig) {
+function makeChain(config: AppConfig) {
   return defineChain({
     id: config.chainId,
     name: 'Monad Testnet',
@@ -178,10 +218,7 @@ export class Signer {
         gas: opts.gas,
         value: opts.value ?? 0n,
         nonce,
-        // The node reserves maxFeePerGas * gas at admission, so an inflated
-        // multiplier raises the balance every burner needs just to be allowed
-        // to send. Monad's base fee is stable, so 1.15x is ample.
-        maxFeePerGas: (opts.gasPrice * 115n) / 100n,
+        maxFeePerGas: feeCap(opts.gasPrice),
         maxPriorityFeePerGas: opts.gasPrice / 50n,
       })
     } catch (err) {

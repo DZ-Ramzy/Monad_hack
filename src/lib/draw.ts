@@ -1,4 +1,4 @@
-import { CATALOGUE, ODDS_CUMULATIVE, TIER_SIZES, cardDef, compValue } from './catalogue'
+import { ODDS_CUMULATIVE, TIER_SIZES, cardDef } from './catalogue'
 
 /**
  * The draw logic of RipCards, in TypeScript.
@@ -17,17 +17,18 @@ export interface DrawnCard {
   vaultRef: number
   name: string
   set: string
-  comp: number
+  /** Raw TCGplayer market price, USD. */
+  marketRaw: number
 }
 
-export function drawTier(roll: number): number {
+function drawTier(roll: number): number {
   for (let i = 0; i < ODDS_CUMULATIVE.length; i++) {
     if (roll < ODDS_CUMULATIVE[i]) return i
   }
   return ODDS_CUMULATIVE.length - 1
 }
 
-export function gradeFor(roll: number, tier: number): number {
+function gradeFor(roll: number, tier: number): number {
   const bump = tier * 8
   if (roll + bump >= 92) return 10
   if (roll + bump >= 70) return 9
@@ -36,7 +37,7 @@ export function gradeFor(roll: number, tier: number): number {
 }
 
 /** One random card, following the published odds. */
-export function drawCard(vaultedChance = 0): DrawnCard {
+function drawCard(vaultedChance = 0): DrawnCard {
   const tier = drawTier(Math.floor(Math.random() * 10_000))
   const cardIndex = Math.floor(Math.random() * TIER_SIZES[tier])
   const grade = gradeFor(Math.floor(Math.random() * 100), tier)
@@ -49,12 +50,10 @@ export function drawCard(vaultedChance = 0): DrawnCard {
     vaultRef: Math.random() < vaultedChance ? 1 + Math.floor(Math.random() * 3) : 0,
     name: def.name,
     set: def.set,
-    comp: compValue(tier, cardIndex, grade),
+    marketRaw: def.marketRaw,
   }
 }
 
 export function drawPack(vaultedChance = 0): DrawnCard[] {
   return Array.from({ length: 3 }, () => drawCard(vaultedChance))
 }
-
-export const CATALOGUE_SIZE = CATALOGUE.reduce((n, t) => n + t.length, 0)

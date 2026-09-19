@@ -1,29 +1,50 @@
 /* ---------------------------------------------------------------------------
-   Ripachu — Monad palette
-   purple #836EF9 · blue #200052 · berry #A0055D · off-white #FBFAF9 · black #0E100F
+   Ripachu — Monad brand palette
+   monad.xyz/brand-and-media-kit
+
+   primary    purple #6E54FF · lilac #DDD7FE · navy #0E091C
+   secondary  cyan #85E6FF · sky #B9E3F9 · pink #FF8EE4 · orange #FFAE45
+
+   The brand purple carries the interface — buttons, links, focus. The
+   secondaries carry rarity, coldest to hottest, so a tier reads as a
+   temperature rather than as an arbitrary colour.
+
+   Type: the kit specifies Britti Sans for headlines. It is commercial and not
+   on Google Fonts, so Inter covers headlines and body; Roboto Mono is the
+   kit's own choice for labels, buttons and code.
 --------------------------------------------------------------------------- */
 
 :root {
-  --bg: #0e100f;
-  --bg-2: #15161a;
-  --bg-3: #1c1d23;
-  --line: #2a2b33;
-  --text: #fbfaf9;
-  --muted: #8b8c98;
-  --purple: #836ef9;
-  --purple-dim: #5b4bc4;
-  --berry: #a0055d;
-  --green: #3ecf8e;
-  --amber: #f5a524;
+  /* primary */
+  --purple: #6e54ff;
+  --purple-rgb: 110 84 255;
+  --lilac: #ddd7fe;
+  --cyan: #85e6ff;
+  --sky: #b9e3f9;
+  --pink: #ff8ee4;
+  --orange: #ffae45;
 
-  --t0: #7d8590;
-  --t1: #3ecf8e;
-  --t2: #4c8dff;
-  --t3: #836ef9;
-  --t4: #ffb020;
+  --bg: #0e091c;
+  --bg-2: #171130;
+  --bg-3: #221a45;
+  --line: #2f2760;
+  --text: #ffffff;
+  --muted: #9a92c2;
+
+  /* semantic: cyan is live, lilac is vaulted stock */
+  --live: #85e6ff;
+  --vault: #ddd7fe;
+  --vault-rgb: 221 215 254;
+
+  /* rarity, coldest to hottest */
+  --t0: #8b84ad;
+  --t1: #b9e3f9;
+  --t2: #85e6ff;
+  --t3: #ff8ee4;
+  --t4: #ffae45;
 
   --r: 14px;
-  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --mono: 'Roboto Mono', ui-monospace, monospace;
 }
 
 * {
@@ -42,9 +63,7 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(900px 500px at 50% -10%, rgba(131, 110, 249, 0.18), transparent 70%),
-    var(--bg);
+  background: var(--bg);
   min-height: 100dvh;
 }
 
@@ -56,18 +75,38 @@ button:disabled {
   cursor: default;
 }
 
+/* Reaches a screen reader and nothing else. The pack screen has no visible
+   heading - RIPACHU is painted into the SVG, so it is not text - and a screen
+   with no h1 gives a reader nothing to land on. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* --- shell ---------------------------------------------------------------- */
 
 .app {
-  max-width: 560px;
+  position: relative;
+  z-index: 0;
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 0 16px 40px;
+  padding: 0 16px 56px;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 
 .top {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -79,14 +118,23 @@ button:disabled {
   align-items: baseline;
   gap: 10px;
 }
+.brand-logo {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  align-self: center;
+  /* Same flat colour as .brand-mark so the glyph and the wordmark read as one
+     lockup. The mark is a flat silhouette; the colour is ours, via the mask. */
+  background: var(--purple);
+  -webkit-mask: url(/logo.png) center / contain no-repeat;
+  mask: url(/logo.png) center / contain no-repeat;
+}
+
 .brand-mark {
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.5px;
-  background: linear-gradient(92deg, var(--purple), #c2b5ff);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--purple);
 }
 .brand-sub {
   font-size: 11px;
@@ -125,14 +173,16 @@ button:disabled {
   flex: none;
 }
 .dot.on {
-  background: var(--green);
-  box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.16);
+  background: var(--vault);
+  box-shadow: 0 0 0 3px rgb(var(--vault-rgb) / 0.16);
 }
 .dot.off {
-  background: var(--amber);
+  background: var(--t4);
 }
 
 .stage {
+  position: relative;
+  z-index: 1;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -142,6 +192,8 @@ button:disabled {
 }
 
 .foot {
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: space-between;
   font-family: var(--mono);
@@ -158,23 +210,71 @@ button:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 20px;
 }
 
+/* The pack owns the screen; everything else is staged around it. Sizes inside
+   the face are in cqw so the whole thing scales as one object - which matters
+   more than usual here, because the rail draws it at 158px and the overlay at
+   up to 330px. A foil pitch in px would be twice as dense on the thumbnail and
+   would moire; in cqw the two are the same wrapper at two distances.
+
+   The layers, back to front:
+
+     .pack-art     the painted scene (SVG, see PackArt)
+     .pack-gloss   the cylinder - a bag is round, so both edges fall off
+     .pack-face    wordmark and type
+     .pack-crimp   the serrated seal at each end
+     .pack-foil    the light streaks, over everything including the wordmark
+     ::after       the rim light, which is NOT in box-shadow on purpose
+
+   The rim is on the pseudo-element because @keyframes pulse animates
+   box-shadow on .pack, and any inset shadow declared there would blink off on
+   every cycle of the sealed state. */
 .pack {
+  /* The scene's palette, in one place. The reference art direction this
+     follows is teal-and-jungle; these are its Monad equivalents, because the
+     app reads rarity as a temperature and green is not on that scale.
+     Swapping these six re-skins the pack - nothing else hardcodes a hue. */
+  --pack-night: #0b0720;
+  --pack-deep: #2a1c63;
+  --pack-sky: #5a3fe8;
+  --pack-horizon: #9d86ff;
+  --pack-gem: #85e6ff;
+  --pack-gem-rgb: 133 230 255;
+  --pack-rune: #ffae45;
+  --pack-canopy: #0d0824;
+  --pack-canopy-2: #241a52;
+  --pack-canopy-3: #4a36a8;
+  --pack-stone: #3a2b74;
+  --pack-ink: #120c2e;
+  --pack-foil-b: 255 142 228;
+  --pack-crimp-1: #8a74ff;
+  --pack-crimp-2: #241a52;
+
   container-type: inline-size;
+  isolation: isolate;
   position: relative;
-  width: 178px;
-  height: 250px;
-  border-radius: 16px;
-  background: linear-gradient(150deg, #2c1f6e 0%, var(--purple) 46%, #3a1d63 100%);
-  box-shadow:
-    0 24px 60px rgba(131, 110, 249, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  aspect-ratio: 0.63;
+  border-radius: 10px;
+  background: var(--pack-night);
+  box-shadow: 0 30px 80px rgb(var(--purple-rgb) / 0.42);
   display: grid;
   place-items: center;
   overflow: hidden;
   transition: transform 0.25s ease;
+}
+.pack::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1.5px 0 rgba(0, 0, 0, 0.5);
 }
 .pack-busy {
   animation: shake 0.42s ease-in-out infinite;
@@ -183,37 +283,171 @@ button:disabled {
   animation: pulse 0.8s ease-in-out infinite;
 }
 
-.pack-face {
-  text-align: center;
-  z-index: 1;
-}
-.pack-title {
-  font-size: 30px;
-  font-weight: 800;
-  letter-spacing: -1px;
-}
-.pack-meta {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 3px;
-  opacity: 0.75;
-  margin-top: 4px;
-}
-.pack-shine {
+.pack-art {
   position: absolute;
-  inset: -50%;
-  background: linear-gradient(72deg, transparent 42%, rgba(255, 255, 255, 0.4) 50%, transparent 58%);
-  animation: sweep 3.4s ease-in-out infinite;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
 }
 
-@keyframes sweep {
-  0%,
-  100% {
-    transform: translateX(-38%);
-  }
-  50% {
-    transform: translateX(38%);
-  }
+/* a bag is a cylinder: dark at both edges, one bright band a third across */
+.pack-gloss {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgba(6, 4, 18, 0.5) 0%,
+    rgba(6, 4, 18, 0.2) 7%,
+    rgba(6, 4, 18, 0) 18%,
+    rgba(255, 255, 255, 0.075) 30%,
+    rgba(255, 255, 255, 0.02) 44%,
+    rgba(6, 4, 18, 0.08) 60%,
+    rgba(6, 4, 18, 0.2) 80%,
+    rgba(6, 4, 18, 0.54) 100%
+  );
+}
+
+/* Two wide speculars and a fine grain, all on one diagonal. Screen, so it only
+   ever adds light - over the white of the chrome it does nothing, which is
+   what foil actually does. */
+.pack-foil {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background:
+    linear-gradient(
+      106deg,
+      transparent 20%,
+      rgba(255, 255, 255, 0.34) 26.5%,
+      rgb(var(--pack-foil-b) / 0.2) 29.5%,
+      transparent 36%
+    ),
+    linear-gradient(106deg, transparent 60%, rgba(255, 255, 255, 0.24) 66%, transparent 71%),
+    repeating-linear-gradient(
+      106deg,
+      transparent 0 6.5cqw,
+      rgba(255, 255, 255, 0.075) 6.5cqw 7.8cqw,
+      transparent 7.8cqw 10.5cqw,
+      rgb(var(--pack-foil-b) / 0.06) 10.5cqw 11.6cqw,
+      transparent 11.6cqw 18cqw
+    );
+}
+
+/* the serrated seal at each end of a foil wrapper - teeth are cut with a mask
+   so the striped foil underneath keeps running right up to the points */
+.pack-crimp {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 7.5%;
+  z-index: 3;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 42%, rgba(8, 5, 22, 0.45)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.4) 0 0.9cqw,
+      rgba(255, 255, 255, 0.06) 0.9cqw 1.9cqw,
+      rgba(8, 5, 22, 0.5) 1.9cqw 3cqw
+    ),
+    linear-gradient(180deg, var(--pack-crimp-1), var(--pack-crimp-2));
+}
+.pack-crimp-top {
+  top: 0;
+  --m:
+    linear-gradient(#000 0 0) top / 100% calc(100% - 2.8cqw) no-repeat,
+    conic-gradient(from 135deg at 50% 0, #000 25%, #0000 0) bottom / 5.4cqw 2.8cqw repeat-x;
+  -webkit-mask: var(--m);
+  mask: var(--m);
+}
+.pack-crimp-bottom {
+  bottom: 0;
+  --m:
+    linear-gradient(#000 0 0) bottom / 100% calc(100% - 2.8cqw) no-repeat,
+    conic-gradient(from -45deg at 50% 100%, #000 25%, #0000 0) top / 5.4cqw 2.8cqw repeat-x;
+  -webkit-mask: var(--m);
+  mask: var(--m);
+}
+
+.pack-face {
+  text-align: center;
+  z-index: 2;
+  padding: 0 6cqw;
+}
+
+/* Chrome, in two stacked copies. The metal is a vertical ramp clipped into the
+   glyphs: light, a dark middle, a hard specular break at the waist, dark
+   again, light at the baseline. The break is what sells it as metal rather
+   than as a grey gradient, so it stays hard-edged. */
+.pack-title {
+  position: relative;
+  display: block;
+  font-size: 19cqw;
+  font-weight: 800;
+  line-height: 0.94;
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.pack-title span {
+  display: block;
+}
+.pack-title-shell {
+  position: absolute;
+  inset: 0;
+  color: var(--pack-ink);
+  -webkit-text-stroke: 1.4cqw var(--pack-ink);
+  paint-order: stroke fill;
+  filter:
+    drop-shadow(0 0.7cqw 0.9cqw rgba(0, 0, 0, 0.6))
+    drop-shadow(0 0 2.6cqw rgb(var(--pack-gem-rgb) / 0.5));
+}
+.pack-title-metal {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #f2f0ff 13%,
+    #a9a3d8 33%,
+    #6f6aa6 47%,
+    #ffffff 50%,
+    #ffffff 55%,
+    #cdc6ef 64%,
+    #7a72b4 83%,
+    #ece9ff 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.pack-prism {
+  display: block;
+  width: 14cqw;
+  height: auto;
+  margin: 0 auto 3.5cqw;
+  filter:
+    drop-shadow(0 0 3cqw rgb(var(--pack-gem-rgb) / 0.8))
+    drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+}
+.pack-meta {
+  display: inline-block;
+  margin-top: 5cqw;
+  padding: 2cqw 4.5cqw;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(9, 6, 24, 0.5);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  font-family: var(--mono);
+  font-size: 2.6cqw;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.86);
 }
 @keyframes shake {
   0%,
@@ -224,24 +458,18 @@ button:disabled {
     transform: rotate(1.6deg);
   }
 }
+/* only the cast shadow moves - the rim light lives on .pack::after, out of
+   reach of this, so it does not blink once a second while a pack is sealed */
 @keyframes pulse {
   0%,
   100% {
     transform: scale(1);
-    box-shadow: 0 24px 60px rgba(131, 110, 249, 0.3);
+    box-shadow: 0 24px 60px rgb(var(--purple-rgb) / 0.3);
   }
   50% {
     transform: scale(1.035);
-    box-shadow: 0 28px 74px rgba(131, 110, 249, 0.55);
+    box-shadow: 0 28px 74px rgb(var(--purple-rgb) / 0.55);
   }
-}
-
-.caption {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  text-align: center;
-  min-height: 18px;
 }
 
 .cta {
@@ -269,41 +497,23 @@ button:disabled {
   color: var(--muted);
 }
 
-.how {
-  list-style: none;
-  counter-reset: s;
-  margin: 8px 0 0;
-  padding: 0;
-  max-width: 360px;
-  display: grid;
-  gap: 9px;
+/* the one button on the pack screen */
+.cta-open {
+  width: auto;
+  min-width: 176px;
+  padding: 19px 46px;
+  border-radius: 999px;
+  background: var(--vault);
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  box-shadow: 0 14px 34px rgb(var(--vault-rgb) / 0.32);
 }
-.how li {
-  counter-increment: s;
-  position: relative;
-  padding-left: 26px;
-  font-size: 12.5px;
-  color: var(--muted);
-  line-height: 1.45;
-}
-.how li::before {
-  content: counter(s);
-  position: absolute;
-  left: 0;
-  top: 1px;
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  display: grid;
-  place-items: center;
-  font-family: var(--mono);
-  font-size: 9px;
-  color: var(--purple);
-}
-.how b {
-  color: var(--text);
-  font-weight: 600;
+.cta-open:disabled {
+  background: rgb(var(--vault-rgb) / 0.16);
+  color: rgba(251, 250, 249, 0.45);
+  box-shadow: none;
 }
 
 /* --- reveal --------------------------------------------------------------- */
@@ -328,7 +538,7 @@ button:disabled {
   font-family: var(--mono);
 }
 .latency b {
-  color: var(--green);
+  color: var(--vault);
 }
 
 .reveal-cards {
@@ -388,7 +598,7 @@ button:disabled {
 /* --- slab ----------------------------------------------------------------- */
 
 .slab {
-  background: linear-gradient(180deg, #f4f3f0, #ddddd8);
+  background: #f4f3f0;
   border-radius: 8px;
   padding: 5px;
   display: flex;
@@ -405,7 +615,7 @@ button:disabled {
 .slab-vaulted {
   box-shadow:
     0 8px 28px rgba(0, 0, 0, 0.5),
-    0 0 0 2px var(--green);
+    0 0 0 2px var(--vault);
 }
 
 .slab-label {
@@ -434,6 +644,20 @@ button:disabled {
 }
 .slab-ident {
   min-width: 0;
+  flex: 1;
+}
+
+/* the set's own symbol, as it sits on the card */
+.slab-symbol {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  object-fit: contain;
+  opacity: 0.8;
+}
+.slab-sm .slab-symbol {
+  width: 10px;
+  height: 10px;
 }
 .slab-name {
   font-size: 10px;
@@ -454,21 +678,28 @@ button:disabled {
   position: relative;
   border-radius: 5px;
   overflow: hidden;
-  aspect-ratio: 5 / 7;
-  background: #0b0c10;
+  /* the scans are 240x330 and 600x825 - both exactly 8:11. Matching it means
+     object-fit has nothing to crop, so no card loses its border. */
+  aspect-ratio: 8 / 11;
+  background: #0b0718;
 }
-.slab-window svg {
+
+/* the real scan. It fills the window and nothing is drawn over it except the
+   sheen below, which is deliberately faint. */
+.slab-scan {
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: cover;
+  user-select: none;
 }
 
 .slab-vault-tag {
   position: absolute;
   top: 5px;
   right: 5px;
-  background: var(--green);
-  color: #06210f;
+  background: var(--vault);
+  color: #1b1240;
   font-family: var(--mono);
   font-size: 6.5px;
   font-weight: 600;
@@ -479,18 +710,46 @@ button:disabled {
 
 .slab-foot {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
+  gap: 5px;
   padding: 0 4px 2px;
   font-family: var(--mono);
   font-size: 8px;
   color: #5b5c66;
 }
+.slab-serial {
+  flex: none;
+}
+
+/* the TCGplayer printing this price belongs to - "1st Edition Holofoil" and
+   "Unlimited" are different cards to a collector, and to the market */
+.slab-printing {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 6.5px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8a8b95;
+}
+.slab-sm .slab-printing {
+  display: none;
+}
 .slab-comp {
+  flex: none;
   font-weight: 600;
   color: #14151a;
 }
 
 /* --- collection ----------------------------------------------------------- */
+
+.collection {
+  position: relative;
+  z-index: 1;
+}
 
 .collection h2 {
   font-size: 13px;
@@ -508,8 +767,8 @@ button:disabled {
   margin-left: auto;
   font-family: var(--mono);
   font-size: 9.5px;
-  color: var(--green);
-  border: 1px solid rgba(62, 207, 142, 0.4);
+  color: var(--vault);
+  border: 1px solid rgb(var(--vault-rgb) / 0.4);
   padding: 3px 8px;
   border-radius: 999px;
 }
@@ -527,16 +786,16 @@ button:disabled {
 }
 .redeem {
   width: 100%;
-  border: 1px solid rgba(62, 207, 142, 0.45);
-  background: rgba(62, 207, 142, 0.1);
-  color: var(--green);
+  border: 1px solid rgb(var(--vault-rgb) / 0.45);
+  background: rgb(var(--vault-rgb) / 0.1);
+  color: var(--vault);
   border-radius: 8px;
   padding: 6px;
   font-size: 10.5px;
   font-weight: 600;
 }
 .redeem:hover {
-  background: rgba(62, 207, 142, 0.2);
+  background: rgb(var(--vault-rgb) / 0.2);
 }
 
 /* --- boot / errors -------------------------------------------------------- */
@@ -596,6 +855,10 @@ button:disabled {
 .screen .brand-mark {
   font-size: 34px;
 }
+.screen .brand-logo {
+  width: 40px;
+  height: 40px;
+}
 .screen .brand-sub {
   font-size: 13px;
 }
@@ -651,8 +914,7 @@ button:disabled {
   padding: 16px 18px;
 }
 .metric-accent {
-  border-color: rgba(131, 110, 249, 0.5);
-  background: linear-gradient(180deg, rgba(131, 110, 249, 0.12), var(--bg-2));
+  border-color: rgb(var(--purple-rgb) / 0.5);
 }
 .metric-label {
   font-size: 10.5px;
@@ -733,15 +995,15 @@ button:disabled {
   justify-self: start;
 }
 .row-vault {
-  color: var(--green);
+  color: var(--vault);
   font-size: 10px;
   letter-spacing: 0.8px;
 }
 .row.tier-4 {
-  background: linear-gradient(90deg, rgba(255, 176, 32, 0.16), var(--bg-2));
+  background: color-mix(in srgb, var(--t4) 10%, var(--bg-2));
 }
 .row.tier-3 {
-  background: linear-gradient(90deg, rgba(131, 110, 249, 0.16), var(--bg-2));
+  background: color-mix(in srgb, var(--purple) 10%, var(--bg-2));
 }
 
 @media (max-width: 900px) {
@@ -759,4 +1021,337 @@ button:disabled {
   .row-vault {
     display: none;
   }
+}
+
+/* --- the page under the pack ---------------------------------------------- */
+
+.packinfo {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.packinfo-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-2);
+}
+.coin {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--purple);
+  font-family: var(--mono);
+  font-size: 7.5px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.packinfo-amount {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.sec {
+  position: relative;
+  z-index: 1;
+  margin-top: 40px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.sec-head {
+  margin: 0 0 16px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sec-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.sec-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* what's inside — one horizontally scrollable rail per tier */
+.tierstrip {
+  margin-bottom: 22px;
+}
+.tierstrip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+.tierstrip-odds {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.tierstrip-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.tierstrip-rail {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.tierstrip-rail > * {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.pulls {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+/* the projector collapses rows at 900px; on the phone page the tier is the
+   whole point of a pull, so keep it */
+@media (max-width: 900px) {
+  .pulls .row {
+    grid-template-columns: 84px 1fr 62px 78px;
+  }
+  .pulls .row-tier {
+    display: inline-block;
+  }
+}
+
+.odds {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg-2);
+  padding: 16px 18px;
+}
+.odds > summary {
+  cursor: pointer;
+  margin: 0;
+  list-style: none;
+}
+.odds > summary::-webkit-details-marker {
+  display: none;
+}
+.odds > summary::after {
+  content: '+';
+  margin-left: auto;
+  font-family: var(--mono);
+  font-weight: 400;
+  color: var(--muted);
+}
+.odds[open] > summary {
+  margin-bottom: 18px;
+}
+.odds[open] > summary::after {
+  content: '−';
+}
+
+.odds-bars {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 20px;
+}
+.odds-row {
+  display: grid;
+  grid-template-columns: 82px 1fr 58px;
+  align-items: center;
+  gap: 12px;
+}
+.odds-name {
+  justify-self: start;
+}
+.odds-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+.odds-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: currentColor;
+}
+.odds-fill.tier-0 { color: var(--t0); }
+.odds-fill.tier-1 { color: var(--t1); }
+.odds-fill.tier-2 { color: var(--t2); }
+.odds-fill.tier-3 { color: var(--t3); }
+.odds-fill.tier-4 { color: var(--t4); }
+.odds-pct {
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: right;
+  color: var(--muted);
+}
+
+.odds-proof {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 7px;
+}
+.odds-proof-k {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: var(--muted);
+}
+.odds-proof-v {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--purple);
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+/* --- pack sizes, rail, overlay -------------------------------------------- */
+
+.pack-rail {
+  width: 158px;
+}
+/* the thumbnail carries the wordmark alone - everything else is unreadable here */
+.pack-rail .pack-kicker,
+.pack-rail .pack-meta {
+  display: none;
+}
+.pack-hero {
+  width: min(74vw, 54dvh * 0.63, 330px);
+}
+
+/* Ten identical packs. Native scroll does the momentum and the snap - the
+   physics a hand expects on a phone is the physics the platform already has.
+
+   On a wide screen there is no thumb and no swipe, so the strip is laid out
+   as a strip: centred when it fits, filling the column when it does not.
+   Snapping stays on proximity here - mandatory with no lead-in padding has no
+   valid position at scrollLeft 0 and the rail would jump on load. */
+.rail {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+  overflow-x: auto;
+  justify-content: safe center;
+  padding: 6px 0 14px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+/* the phone keeps the carousel: half a screen of lead-in at each end is what
+   lets the first and last pack come to rest under the thumb, dead centre */
+@media (max-width: 900px) {
+  .rail {
+    justify-content: flex-start;
+    padding: 6px calc(50% - 79px) 14px;
+    scroll-snap-type: x mandatory;
+  }
+}
+.rail::-webkit-scrollbar {
+  display: none;
+}
+.rail-item {
+  flex: 0 0 auto;
+  scroll-snap-align: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 10px;
+  transition: transform 0.18s ease, filter 0.18s ease;
+  filter: brightness(0.82) saturate(0.9);
+}
+.rail-item:hover,
+.rail-item-on {
+  transform: translateY(-6px);
+  filter: none;
+}
+.rail-item:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: 6px;
+}
+/* the state from the reference: the chosen pack, the page blurred behind it */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: rgba(8, 9, 10, 0.74);
+  -webkit-backdrop-filter: blur(22px) saturate(0.85);
+  backdrop-filter: blur(22px) saturate(0.85);
+  animation: overlayIn 0.22s ease both;
+}
+@keyframes overlayIn {
+  from {
+    opacity: 0;
+  }
+}
+.overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  animation: overlayPack 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+@keyframes overlayPack {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(14px);
+  }
+}
+.overlay-back {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 0;
+}
+.overlay-back:hover {
+  color: var(--text);
+}
+
+/* --- restored: caption under the CTA, and the fairness steps -------------- */
+
+.caption {
+  margin: 0;
+  color: rgb(var(--vault-rgb) / 0.92);
+  font-size: 14px;
+  text-align: center;
+  min-height: 18px;
+}
+
+.pack-kicker {
+  font-family: var(--mono);
+  font-size: 3cqw;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: rgba(255, 255, 255, 0.86);
+  text-shadow: 0 1px 3px rgba(8, 5, 22, 0.9), 0 0 8px rgba(8, 5, 22, 0.7);
+  margin-bottom: 4cqw;
 }

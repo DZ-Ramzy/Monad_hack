@@ -20,7 +20,14 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { formatEther, parseAbiItem, type Address, type Hex } from 'viem'
 import { publicClient, chain, rpcUrl, EXPLORER } from '../src/lib/chain.js'
-import { CATALOGUE, TIER_NAMES, TIER_SIZES, ODDS_CUMULATIVE, cardDef, compValue } from '../src/lib/catalogue.js'
+import {
+  CATALOGUE,
+  CATALOGUE_SOURCE,
+  TIER_NAMES,
+  TIER_SIZES,
+  ODDS_CUMULATIVE,
+  cardDef,
+} from '../src/lib/catalogue.js'
 import { drawPack } from '../src/lib/draw.js'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
@@ -79,7 +86,8 @@ interface Pull {
   vaultRef: number
   name: string
   set: string
-  comp: number
+  /** Raw TCGplayer market price, USD. */
+  marketRaw: number
   blockNumber: number
   txHash: Hex
   at: number
@@ -237,7 +245,7 @@ async function tick() {
           vaultRef,
           name: def.name,
           set: def.set,
-          comp: compValue(tier, cardIndex, grade),
+          marketRaw: def.marketRaw,
           blockNumber: Number(log.blockNumber),
           txHash: log.transactionHash!,
           at: Date.now(),
@@ -339,6 +347,7 @@ app.get('/api/config', (_req, res) => {
     packPrice: deployment.packPrice,
     catalogueRoot: deployment.catalogueRoot,
     catalogue: CATALOGUE,
+    catalogueSource: CATALOGUE_SOURCE,
     tierNames: TIER_NAMES,
     tierSizes: TIER_SIZES,
     odds: ODDS_CUMULATIVE,
@@ -351,7 +360,11 @@ app.post('/api/claim', (req, res) => {
     return res.json({ privateKey, address: privateKeyToAccount(privateKey).address, demo: true })
   }
   const existing = req.body?.address as string | undefined
-  if (existing && claimed[existing.toLowerCase()] !== undefined) {
+  // A phone rotates when its burner can no longer cover a rip. The spent
+  // wallet keeps its entry in `claimed` - that is what keeps its pool index
+  // out of `taken`, so it is never handed to the next person in the room.
+  const rotate = req.body?.rotate === true
+  if (!rotate && existing && claimed[existing.toLowerCase()] !== undefined) {
     const w = pool[claimed[existing.toLowerCase()]]
     if (w) return res.json({ privateKey: w.privateKey, address: w.address, reused: true })
   }
@@ -382,6 +395,9 @@ app.get('/api/balance/:address', async (req, res) => {
     balanceCache.set(address, { value, at: Date.now() })
     res.json({ balance: value })
   } catch {
+    // The browser decides whether to rotate wallets on this number. A failed
+    // read must be flagged, not dressed up as a zero - that would retire a
+    // perfectly good burner every time the RPC hiccups.
     res.json({ balance: hit?.value ?? '0', stale: true })
   }
 })
