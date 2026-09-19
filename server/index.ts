@@ -75,12 +75,42 @@ const RIP_ABI = existsSync(join(root, 'artifacts/RipCards.json'))
   ? readJson('artifacts/RipCards.json').abi
   : []
 
-const pool: { privateKey: Hex; address: Address }[] = existsSync(join(root, 'wallets.json'))
-  ? readJson('wallets.json').wallets
-  : []
+/**
+ * The burner pool.
+ *
+ * wallets.json is seventy funded private keys, which is exactly why it is
+ * gitignored and never reaches a host that way. A deployed server is handed
+ * the same JSON base64-encoded in WALLETS_B64 instead: decoded here at boot,
+ * held in memory, never written to disk.
+ */
+function loadPool(): { privateKey: Hex; address: Address }[] {
+  const b64 = process.env.WALLETS_B64
+  if (b64) {
+    try {
+      return JSON.parse(Buffer.from(b64, 'base64').toString('utf8')).wallets
+    } catch (e) {
+      console.error('WALLETS_B64 is set but could not be decoded:', (e as Error).message)
+      process.exit(1)
+    }
+  }
+  return existsSync(join(root, 'wallets.json')) ? readJson('wallets.json').wallets : []
+}
+
+const pool = loadPool()
 
 let claimed: Record<string, number> = existsSync(CLAIMED_FILE) ? readJson('.claimed.json') : {}
-const persistClaimed = () => writeFileSync(CLAIMED_FILE, JSON.stringify(claimed))
+/**
+ * Best effort. A hosted container has an ephemeral and sometimes read-only
+ * disk; losing this file costs a re-handout after a restart, but throwing here
+ * would take down the one endpoint a phone needs to get into the demo at all.
+ */
+const persistClaimed = () => {
+  try {
+    writeFileSync(CLAIMED_FILE, JSON.stringify(claimed))
+  } catch (e) {
+    console.warn('could not persist .claimed.json:', (e as Error).message)
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Live state, derived entirely from logs
@@ -360,6 +390,35 @@ setInterval(() => broadcast('stats', snapshot()), 1000)
 const app = express()
 app.use(express.json())
 
+/**
+ * CORS, and only when asked for.
+ *
+ * The default deployment puts a static host in front that rewrites /api/* to
+ * here, which is same-origin from the browser's point of view and needs none
+ * of this. ALLOWED_ORIGIN is for the other shape - the page calling this
+ * server's origin directly - and is an explicit allowlist rather than a
+ * blanket '*', because /api/claim hands out funded private keys.
+ */
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+
+if (ALLOWED_ORIGINS.length) {
+  app.use((req, res, next) => {
+    const origin = req.headers.origin
+    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin)
+      res.setHeader('Vary', 'Origin')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    }
+    if (req.method === 'OPTIONS') return res.sendStatus(204)
+    next()
+  })
+  console.log(`cors allowed      ${ALLOWED_ORIGINS.join(', ')}`)
+}
+
 app.get('/api/config', (_req, res) => {
   res.json({
     demo: DEMO,
@@ -455,11 +514,10 @@ app.get('/api/pending/:address', async (req, res) => {
 /**
  * The cards an address actually owns, read from the chain.
  *
- * This is what makes a deck survive a reload, and what makes signing in mean
- * anything: until now the grid was derived purely from the live feed, which is
- * the last 60 pulls in the ROOM. Reload, or sign in with a wallet that ripped
- * yesterday, and your cards were simply gone - not moved, not sold, just never
- * looked up.
+ * This is what makes a deck survive a reload: until now the grid was derived
+ * purely from the live feed, which is the last 60 pulls in the ROOM. Reload,
+ * and your cards were simply gone - not moved, not sold, just never looked
+ * up.
  *
  * There is no ERC721Enumerable here, but there does not need to be. Token ids
  * are `keccak256(buyer, packNonce, slot)` and nothing about that needs a node:
@@ -593,8 +651,25 @@ app.get('/api/stream', (req, res) => {
   })
 })
 
-app.use(express.static(join(root, 'dist')))
-app.get('*', (_req, res) => res.sendFile(join(root, 'dist', 'index.html')))
+/** Host healthcheck. Answers without involving the frontend build at all. */
+app.get('/healthz', (_req, res) =>
+  res.json({ ok: true, demo: DEMO, block: stats.block, clients: clients.length }),
+)
+
+/**
+ * Serving the built frontend is optional.
+ *
+ * When a static host fronts this server, dist/ may not exist here at all - and
+ * an unconditional catch-all would then answer every unmatched route with an
+ * ENOENT rather than a 404, the healthcheck included.
+ */
+const distDir = join(root, 'dist')
+if (existsSync(join(distDir, 'index.html'))) {
+  app.use(express.static(distDir))
+  app.get('*', (_req, res) => res.sendFile(join(distDir, 'index.html')))
+} else {
+  app.get('*', (_req, res) => res.status(404).json({ error: 'api only - no frontend built here' }))
+}
 
 app.listen(PORT, () => {
   console.log(`Ripachu server        http://localhost:${PORT}${DEMO ? '   [DEMO - nothing is onchain]' : ''}`)

@@ -6,6 +6,7 @@ import {
   type Hex,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
+import { api } from './api'
 
 /**
  * The burner wallet a phone plays with.
@@ -132,7 +133,7 @@ function store(burner: Burner) {
  */
 export async function claimBurner(opts: { rotate?: boolean } = {}): Promise<Burner> {
   const existing = readStored()
-  const res = await fetch('/api/claim', {
+  const res = await fetch(api('/api/claim'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ address: existing?.address, rotate: opts.rotate === true }),

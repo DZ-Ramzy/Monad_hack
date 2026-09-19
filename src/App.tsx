@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BaseError, encodeFunctionData, formatEther, type Address, type Hex } from 'viem'
 import ripAbi from '../artifacts/RipCards.json'
 import { CardArt } from './components/CardArt'
+import { api } from './lib/api'
 import { LatestPulls, WhatsInside } from './components/sections'
 import { TIER_NAMES } from './lib/catalogue'
 import { drawPack } from './lib/draw'
@@ -48,7 +49,7 @@ export default function App() {
   useEffect(() => {
     ;(async () => {
       try {
-        const cfg: AppConfig = await (await fetch('/api/config')).json()
+        const cfg: AppConfig = await (await fetch(api('/api/config'))).json()
         setConfig(cfg)
         const burner = await claimBurner()
         setSigner(new Signer(cfg, burner))
@@ -77,9 +78,9 @@ export default function App() {
   )
 
   // A slow heartbeat, so the chip also reflects money that arrived outside a
-  // rip - a sign-in top-up landing a block later, a buyback, another device.
-  // The endpoint is cached server-side, so this costs the RPC nothing; finer
-  // than this would just be a tax on the room.
+  // rip - a top-up landing a block later, a buyback, another device. The
+  // endpoint is cached server-side, so this costs the RPC nothing; finer than
+  // this would just be a tax on the room.
   useEffect(() => {
     if (!signer) return
     const { address } = signer
@@ -92,14 +93,13 @@ export default function App() {
   //
   // It used to be derived purely from the live feed, which is the last 60
   // pulls in the room. That made the grid a view of the session rather than of
-  // the wallet: reload the page and your cards were gone, sign in with a
-  // wallet that ripped yesterday and it looked empty. Nothing had moved - they
-  // were simply never looked up.
+  // the wallet: reload the page and your cards were gone. Nothing had moved -
+  // they were simply never looked up.
   //
   // Cards also belong to a wallet, not to the session, so this reruns whenever
-  // the live wallet changes - signing in, signing out, a burner rotating.
-  // Leaving the previous wallet's cards on screen would offer a redeem button
-  // that can only revert, and on Monad a revert still pays its full gas limit.
+  // the live wallet changes - a burner rotating. Leaving the previous wallet's
+  // cards on screen would offer a redeem button that can only revert, and on
+  // Monad a revert still pays its full gas limit.
   const loadCards = useCallback(async (address: Address, isStale?: () => boolean) => {
     const owned = await readCards(address)
     // The wallet can be swapped while this is in flight, and a reveal can land
@@ -979,8 +979,6 @@ function PackView({
   // the tear is short and uninterruptible - there is nothing to escape from yet
   const locked = busy || stage === 'tearing'
 
-  const pick = (i: number) => setSelected(i)
-
   useEffect(() => {
     if (selected === null || locked) return
     const onKey = (e: KeyboardEvent) => {
@@ -993,14 +991,10 @@ function PackView({
   return (
     <div className="packview">
       <h1 className="sr-only">Ripachu Pack</h1>
-      <Rail selected={selected} onSelect={pick} paused={selected !== null} />
+      <Rail selected={selected} onSelect={setSelected} paused={selected !== null} />
 
       <div className="packinfo">
-        <button
-          className="cta cta-open"
-          onClick={() => setSelected(0)}
-          disabled={busy}
-        >
+        <button className="cta cta-open" onClick={() => setSelected(0)} disabled={busy}>
           Open a pack
         </button>
       </div>
@@ -1189,7 +1183,7 @@ function gasPriceOf(stats: Stats): bigint {
  */
 async function readBalance(address: Address): Promise<bigint | null> {
   try {
-    const r = await (await fetch(`/api/balance/${address}`)).json()
+    const r = await (await fetch(api(`/api/balance/${address}`))).json()
     return r.stale ? null : BigInt(r.balance)
   } catch {
     return null
@@ -1199,7 +1193,7 @@ async function readBalance(address: Address): Promise<bigint | null> {
 /** The cards an address owns, read from the chain by the server. */
 async function readCards(address: Address): Promise<Pull[] | null> {
   try {
-    const r = await fetch(`/api/cards/${address}`)
+    const r = await fetch(api(`/api/cards/${address}`))
     if (!r.ok) return null
     return (await r.json()).cards as Pull[]
   } catch {
@@ -1211,7 +1205,7 @@ async function readPending(
   address: Address,
 ): Promise<{ sealed: boolean; commitBlock: number } | null> {
   try {
-    const r = await fetch(`/api/pending/${address}`)
+    const r = await fetch(api(`/api/pending/${address}`))
     return r.ok ? await r.json() : null
   } catch {
     return null
@@ -1243,14 +1237,6 @@ function friendlyError(e: unknown): string {
   }
   if (/pool exhausted|pool is out of MON/i.test(m)) {
     return 'every funded burner is claimed — top the pool up'
-  }
-  // A signed-in wallet can refuse a transaction. A burner never does, so these
-  // only appear once somebody has connected an external wallet.
-  if (/user rejected|denied transaction|request rejected|4001/i.test(m)) {
-    return 'you turned that transaction down'
-  }
-  if (/chain|network/i.test(m) && /switch|mismatch|unsupported/i.test(m)) {
-    return 'switch your wallet to Monad testnet and try again'
   }
   if (/PackAlreadyPending/i.test(m)) return 'a pack is already sealed — reveal it first'
   if (/RevealTooEarly/i.test(m)) return 'too early, the fairness block has not landed yet'

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Address, Hex } from 'viem'
+import { api } from './api'
 
 export interface Pull {
   tokenId: string
@@ -55,7 +56,7 @@ export function useLive() {
   const [commitTick, setCommitTick] = useState(0)
 
   useEffect(() => {
-    const es = new EventSource('/api/stream')
+    const es = new EventSource(api('/api/stream'))
 
     es.addEventListener('open', () => setConnected(true))
     es.addEventListener('error', () => setConnected(false))

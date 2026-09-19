@@ -1008,16 +1008,6 @@ button:disabled {
   text-align: center;
 }
 
-/* The line under the CTA while there is no wallet behind the pack. Quiet on
-   purpose: the button already says what to do, this only says why. */
-.packinfo-note {
-  margin: 0;
-  max-width: 34ch;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
 .sec {
   position: relative;
   z-index: 1;
@@ -1350,60 +1340,6 @@ button:disabled {
   color: rgba(255, 255, 255, 0.86);
   text-shadow: 0 1px 3px rgba(8, 5, 22, 0.9), 0 0 8px rgba(8, 5, 22, 0.7);
   margin-bottom: 4cqw;
-}
-
-/* --- sign in -------------------------------------------------------------
- *
- * Deliberately quiet. Signing in is the optional path - the loud control on
- * this screen is the one that opens a pack, and a bright "connect wallet"
- * button next to it would read as the thing to press first. It sits at the
- * weight of the balance chip beside it, not above it.
- */
-.signin {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-.signin:hover:not(:disabled) {
-  color: var(--vault);
-  border-color: var(--vault);
-}
-.signin:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.signin.on {
-  color: var(--vault);
-  border-color: rgb(var(--vault-rgb) / 0.4);
-}
-.signin-addr {
-  font-family: var(--mono);
-  font-size: 11px;
-}
-.signin-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--vault);
-  box-shadow: 0 0 0 3px rgb(var(--vault-rgb) / 0.16);
-  flex: none;
-}
-/* The shared .spin is sized for buttons; in the chip it needs to be small. */
-.signin .spin {
-  width: 10px;
-  height: 10px;
-  border-width: 1.5px;
 }
 
 /* ---------------------------------------------------------------------------

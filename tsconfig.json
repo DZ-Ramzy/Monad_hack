@@ -11,7 +11,7 @@
     "resolveJsonModule": true,
     "allowJs": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node", "vite/client"]
   },
   "include": ["src", "server", "scripts", "vite.config.ts"]
 }
