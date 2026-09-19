@@ -12,7 +12,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { formatEther, formatGwei, parseEther, type Address, type Hex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { chain, rpcUrl, publicClient, EXPLORER } from '../src/lib/chain.js'
+import { chain, rpcUrl, publicClient, EXPLORER, mapLimited } from '../src/lib/chain.js'
 import { catalogueRoot } from '../src/lib/catalogue.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -125,8 +125,8 @@ if (!has('wallets.json')) {
 } else {
   const { wallets } = readJson('wallets.json') as { wallets: { address: Address }[] }
   const floor = parseEther('0.01')
-  const balances = await Promise.all(
-    wallets.map((w) => pub.getBalance({ address: w.address }).catch(() => 0n)),
+  const balances = await mapLimited(wallets, 8, (w) =>
+    pub.getBalance({ address: w.address }).catch(() => 0n),
   )
   const funded = balances.filter((b) => b >= floor).length
   const total = balances.reduce((a, b) => a + b, 0n)

@@ -18,7 +18,7 @@ import {
   type Address,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { chain, rpcUrl, publicClient, EXPLORER } from '../src/lib/chain.js'
+import { chain, rpcUrl, publicClient, EXPLORER, mapLimited, withRetry } from '../src/lib/chain.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p: string) => JSON.parse(readFileSync(join(root, p), 'utf8'))
@@ -35,9 +35,7 @@ const account = privateKeyToAccount(process.env.DEPLOYER_PK as Hex)
 const pub = publicClient()
 const wallet = createWalletClient({ account, chain, transport: http(rpcUrl()) })
 
-const balances = await Promise.all(
-  wallets.map((w) => pub.getBalance({ address: w.address })),
-)
+const balances = await mapLimited(wallets, 4, (w) => pub.getBalance({ address: w.address }))
 const targets = wallets.filter((_, i) => balances[i] < amount / 2n)
 
 console.log(`pool        ${wallets.length} wallets`)
@@ -62,22 +60,29 @@ if (have < needed) {
   process.exit(1)
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 for (let i = 0; i < targets.length; i += CHUNK) {
+  // Each chunk moves real value out of the deployer, which drops it below
+  // Monad's 10 MON reserve balance. An account under that reserve is allowed
+  // one balance-dipping transaction per 3-block window, so chunks have to be
+  // spaced or the second one comes back as a reserve balance violation.
+  if (i > 0) await sleep(2500)
   const slice = targets.slice(i, i + CHUNK)
-  const hash = await wallet.writeContract({
+  const hash = await withRetry(() => wallet.writeContract({
     address: deployment.contracts.Disperse as Address,
     abi: disperseAbi,
     functionName: 'disperse',
     args: [slice.map((w) => w.address), amount],
     value: amount * BigInt(slice.length),
-  })
-  const receipt = await pub.waitForTransactionReceipt({ hash })
+  }))
+  const receipt = await withRetry(() => pub.waitForTransactionReceipt({ hash }))
   if (receipt.status !== 'success') throw new Error(`disperse chunk reverted: ${hash}`)
   console.log(
     `  funded ${String(slice.length).padStart(3)} wallets  gas ${receipt.gasUsed}  ${EXPLORER}/tx/${hash}`,
   )
 }
 
-const after = await Promise.all(wallets.map((w) => pub.getBalance({ address: w.address })))
+const after = await mapLimited(wallets, 4, (w) => pub.getBalance({ address: w.address }))
 const ready = after.filter((b) => b >= amount / 2n).length
 console.log(`\n${ready}/${wallets.length} wallets ready. Pool is armed.`)

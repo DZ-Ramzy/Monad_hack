@@ -150,6 +150,14 @@ function snapshot() {
 // ---------------------------------------------------------------------------
 
 let cursor = 0n
+let indexerErrors = 0
+
+/**
+ * The public Monad RPC caps eth_getLogs at a 100 block range. Asking for more
+ * returns an error, not a truncated result - so a naive wide backfill fails
+ * every tick, the cursor never advances, and the feed stays silently empty.
+ */
+const LOG_SPAN = 90n
 
 async function tick() {
   try {
@@ -167,14 +175,18 @@ async function tick() {
     if (stats.gasPrice === '0' || Number(head) % 20 === 0) {
       stats.gasPrice = (await pub.getGasPrice()).toString()
     }
-    if (cursor === 0n) cursor = head > 200n ? head - 200n : 0n
+    if (cursor === 0n) cursor = head > LOG_SPAN ? head - LOG_SPAN : 0n
     if (head < cursor) return
+
+    // never ask for more than the RPC will serve, and catch up over several
+    // ticks if we have fallen behind
+    const toBlock = head - cursor >= LOG_SPAN ? cursor + LOG_SPAN - 1n : head
 
     const logs = await pub.getLogs({
       address: contractAddress,
       events: [evCommitted, evMinted, evRevealed, evRedeemed],
       fromBlock: cursor,
-      toBlock: head,
+      toBlock,
     })
 
     const fresh: Pull[] = []
@@ -242,12 +254,16 @@ async function tick() {
     const cutoff = Date.now() - 10_000
     if (txTimes.length > 2000) txTimes = txTimes.filter((t) => t > cutoff)
 
-    cursor = head + 1n
+    cursor = toBlock + 1n
   } catch (err) {
     // The public RPC rate limits and occasionally drops a request. A missed
     // tick is harmless - the cursor has not advanced, so the next one refetches
-    // the same range.
-    if (process.env.DEBUG) console.warn('indexer tick failed:', (err as Error).message)
+    // the same range. But a tick that fails EVERY time means the feed is dead,
+    // and a silently empty screen during a pitch is the worst way to find out.
+    indexerErrors++
+    if (indexerErrors <= 3 || indexerErrors % 50 === 0) {
+      console.warn(`indexer tick failed (${indexerErrors}):`, String((err as Error).message).slice(0, 140))
+    }
   }
 }
 
