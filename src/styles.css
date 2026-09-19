@@ -10,8 +10,10 @@
    temperature rather than as an arbitrary colour.
 
    Type: the kit specifies Britti Sans for headlines. It is commercial and not
-   on Google Fonts, so Inter covers headlines and body; Roboto Mono is the
-   kit's own choice for labels, buttons and code.
+   on Google Fonts, so the whole interface is Geist - Geist for headlines and
+   body, Geist Mono for labels, buttons, numbers and addresses. One family,
+   two cuts: the mono keeps figures on a fixed width, which is what the odds
+   table, the prices and the truncated addresses are lined up on.
 --------------------------------------------------------------------------- */
 
 :root {
@@ -44,7 +46,8 @@
   --t4: #ffae45;
 
   --r: 14px;
-  --mono: 'Roboto Mono', ui-monospace, monospace;
+  --sans: Geist, -apple-system, system-ui, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, monospace;
 }
 
 * {
@@ -55,15 +58,22 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: var(--bg);
   color: var(--text);
-  font-family: Inter, -apple-system, system-ui, sans-serif;
+  font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: contain;
 }
 
-body {
+/* The navy lives on html alone, so it propagates to the page canvas and the
+   overscroll still reads navy. Painting it on body as well would bury the
+   light tunnel: a z-index -1 layer paints before an in-flow block background,
+   not after it. */
+html {
   background: var(--bg);
+}
+
+body {
+  background: transparent;
   min-height: 100dvh;
 }
 
@@ -92,6 +102,17 @@ button:disabled {
 }
 
 /* --- shell ---------------------------------------------------------------- */
+
+/* The light tunnel. It sits at -1 so it lands above the navy that html
+   propagates to the page canvas and below everything the app paints - `.app`
+   is z-index 0, the overlays are higher still, so nothing else moves. It
+   takes no pointer either; the tunnel reads the mouse off the window. */
+.site-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
 
 .app {
   position: relative;
@@ -182,7 +203,11 @@ button:disabled {
 
 .stage {
   position: relative;
-  z-index: 1;
+  /* Above its siblings, not level with them. The overlay is fixed and lives in
+     here, so its z-index resolves inside this stacking context - at 1 it tied
+     with .collection, .sec and .foot, and a tie goes to whatever comes later in
+     the document. The pack was being painted over by the lists under it. */
+  z-index: 2;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -191,16 +216,42 @@ button:disabled {
   padding: 24px 0;
 }
 
+/* The footer is the wordmark and nothing else, set at the width of the page.
+   The word is SVG text with textLength, so it fills the box exactly rather
+   than leaving a gutter that shifts with the font and the viewport. It is the
+   brand purple flat, the same token as the wordmark in the header, so the two
+   read as one lockup opening and closing the page. */
 .foot {
   position: relative;
+  /* the pack overlay resolves inside .stage at z-index 2 and has to stay over
+     this - see the note on .stage */
   z-index: 1;
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+  margin-top: 56px;
+  /* .app keeps 56px under the fold; the mark sits down into it, near the edge */
+  margin-bottom: -34px;
+}
+
+.foot-mark {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Safari falls back to a 150px box for an inline svg with no height
+     attribute, so the ratio is pinned rather than left to the viewBox */
+  aspect-ratio: 1000 / 262;
+  /* a fallback font is taller than Geist, and a clipped descender on the p is
+     worse than a mark that runs a few px past its box */
+  overflow: visible;
+}
+
+.foot-mark text {
+  font-family: var(--sans);
+  /* sized so the word is near its natural width at this viewBox - textLength
+     takes up the slack, so this only has to be close */
+  font-size: 255px;
+  font-weight: 800;
+  /* Solid, not a tint. Against the navy this lands near 4:1, which is where a
+     word this size stops being a texture and starts being read. */
+  fill: var(--purple);
 }
 
 /* --- pack ----------------------------------------------------------------- */
@@ -497,29 +548,39 @@ button:disabled {
   color: var(--muted);
 }
 
-/* the one button on the pack screen */
+/* The one button on the pack screen. Shape only: the brand purple and the
+   white on it come from .cta, which every button on the site already shares.
+   Lilac is --vault, it means vaulted stock, and white on it does not read. */
 .cta-open {
   width: auto;
   min-width: 176px;
   padding: 19px 46px;
   border-radius: 999px;
-  background: var(--vault);
-  color: #ffffff;
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  box-shadow: 0 14px 34px rgb(var(--vault-rgb) / 0.32);
+  box-shadow: 0 14px 34px rgb(var(--purple-rgb) / 0.32);
 }
 .cta-open:disabled {
-  background: rgb(var(--vault-rgb) / 0.16);
-  color: rgba(251, 250, 249, 0.45);
+  background: rgb(var(--purple-rgb) / 0.18);
+  color: rgba(255, 255, 255, 0.45);
   box-shadow: none;
+}
+/* the label carries the price in the overlay, so it has to survive a 360px
+   phone with the overlay's own 16px gutter on each side */
+@media (max-width: 430px) {
+  .cta-open {
+    font-size: 18px;
+    padding: 17px 28px;
+  }
 }
 
 /* --- reveal --------------------------------------------------------------- */
 
+/* Lives inside the pack overlay: the cards come out of where the pack stood,
+   so the column is capped near the pack's own width rather than the page's. */
 .reveal {
-  width: 100%;
+  width: min(92vw, 640px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -541,21 +602,26 @@ button:disabled {
   color: var(--vault);
 }
 
+/* the perspective is on the row, so the three cards turn as one object seen
+   from one eye rather than each in its own private box */
 .reveal-cards {
   display: flex;
   gap: 10px;
   justify-content: center;
   width: 100%;
+  perspective: 1100px;
 }
 .reveal-card {
-  animation: flip 0.5s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  animation: flip 0.52s cubic-bezier(0.16, 0.84, 0.28, 1) both;
   flex: 1 1 0;
   min-width: 0;
 }
+/* Rising out of the torn pack, not fading in over it: they start small, low
+   and edge-on, which is where the pack was a moment ago. */
 @keyframes flip {
   from {
     opacity: 0;
-    transform: rotateY(70deg) translateY(16px) scale(0.9);
+    transform: translateY(42px) scale(0.68) rotateY(78deg);
   }
   to {
     opacity: 1;
@@ -595,98 +661,41 @@ button:disabled {
 .tier-tag.tier-3 { color: var(--t3); }
 .tier-tag.tier-4 { color: var(--t4); }
 
-/* --- slab ----------------------------------------------------------------- */
+/* --- card ----------------------------------------------------------------- */
 
-.slab {
-  background: #f4f3f0;
-  border-radius: 8px;
-  padding: 5px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
-  color: #14151a;
+/*
+ * The scan, framed by nothing.
+ *
+ * This used to be a graded slab: a cream border, a grade block, a cert line and
+ * a foot with the comp. All of it is gone. At the sizes these actually render -
+ * 120px on the grid - the chrome and the art were competing for the same
+ * hundred pixels, and only one of them is worth looking at.
+ *
+ * The scans are 240x330 and 600x825, both exactly 8:11, so matching that ratio
+ * means object-fit has nothing to crop and no card loses its own printed border.
+ */
+.pcard {
+  position: relative;
   width: 100%;
+  aspect-ratio: 8 / 11;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #0b0718;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
-.slab-sm { max-width: 120px; }
-.slab-md { max-width: 160px; }
-.slab-lg { max-width: 200px; }
+.pcard-sm { max-width: 120px; }
+.pcard-md { max-width: 160px; }
+.pcard-lg { max-width: 200px; }
 
-.slab-vaulted {
+/* A redeemable card is a different object from a normal pull, and the grid has
+   to say so - this is the one mark kept from the slab. */
+.pcard-vaulted {
   box-shadow:
     0 8px 28px rgba(0, 0, 0, 0.5),
     0 0 0 2px var(--vault);
 }
 
-.slab-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 4px;
-}
-.slab-grade {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  line-height: 1;
-  flex: none;
-}
-.slab-grade-num {
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -0.6px;
-}
-.slab-grade-text {
-  font-family: var(--mono);
-  font-size: 5px;
-  letter-spacing: 0.4px;
-  color: #5b5c66;
-}
-.slab-ident {
-  min-width: 0;
-  flex: 1;
-}
-
-/* the set's own symbol, as it sits on the card */
-.slab-symbol {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  object-fit: contain;
-  opacity: 0.8;
-}
-.slab-sm .slab-symbol {
-  width: 10px;
-  height: 10px;
-}
-.slab-name {
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.slab-set {
-  font-size: 7.5px;
-  color: #5b5c66;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.slab-window {
-  position: relative;
-  border-radius: 5px;
-  overflow: hidden;
-  /* the scans are 240x330 and 600x825 - both exactly 8:11. Matching it means
-     object-fit has nothing to crop, so no card loses its border. */
-  aspect-ratio: 8 / 11;
-  background: #0b0718;
-}
-
-/* the real scan. It fills the window and nothing is drawn over it except the
-   sheen below, which is deliberately faint. */
-.slab-scan {
+.pcard-scan {
   width: 100%;
   height: 100%;
   display: block;
@@ -694,7 +703,7 @@ button:disabled {
   user-select: none;
 }
 
-.slab-vault-tag {
+.pcard-vault-tag {
   position: absolute;
   top: 5px;
   right: 5px;
@@ -706,42 +715,6 @@ button:disabled {
   letter-spacing: 0.7px;
   padding: 2.5px 5px;
   border-radius: 3px;
-}
-
-.slab-foot {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 5px;
-  padding: 0 4px 2px;
-  font-family: var(--mono);
-  font-size: 8px;
-  color: #5b5c66;
-}
-.slab-serial {
-  flex: none;
-}
-
-/* the TCGplayer printing this price belongs to - "1st Edition Holofoil" and
-   "Unlimited" are different cards to a collector, and to the market */
-.slab-printing {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-  font-size: 6.5px;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #8a8b95;
-}
-.slab-sm .slab-printing {
-  display: none;
-}
-.slab-comp {
-  flex: none;
-  font-weight: 600;
-  color: #14151a;
 }
 
 /* --- collection ----------------------------------------------------------- */
@@ -977,7 +950,7 @@ button:disabled {
   color: var(--muted);
 }
 .row-name {
-  font-family: Inter, sans-serif;
+  font-family: var(--sans);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -1034,31 +1007,15 @@ button:disabled {
   gap: 12px;
   text-align: center;
 }
-.packinfo-price {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 14px 7px 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg-2);
-}
-.coin {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--purple);
-  font-family: var(--mono);
-  font-size: 7.5px;
-  font-weight: 600;
-  letter-spacing: -0.2px;
-}
-.packinfo-amount {
-  font-family: var(--mono);
-  font-size: 17px;
-  font-weight: 600;
+
+/* The line under the CTA while there is no wallet behind the pack. Quiet on
+   purpose: the button already says what to do, this only says why. */
+.packinfo-note {
+  margin: 0;
+  max-width: 34ch;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .sec {
@@ -1089,38 +1046,20 @@ button:disabled {
   color: var(--muted);
 }
 
-/* what's inside — one horizontally scrollable rail per tier */
-.tierstrip {
-  margin-bottom: 22px;
-}
-.tierstrip-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 9px;
-}
-.tierstrip-odds {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 600;
-}
-.tierstrip-count {
-  font-size: 11px;
-  color: var(--muted);
-}
-.tierstrip-rail {
-  display: flex;
-  gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 8px;
-  scroll-snap-type: x proximity;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
-}
-.tierstrip-rail > * {
-  flex: 0 0 auto;
-  scroll-snap-align: start;
+/* what's inside — the whole set in one grid, unpartitioned by rarity.
+
+   The tiers are not separated here on purpose: the set reads as one collection,
+   and a card's own printing says what it is - a holo reads as a holo - so the
+   rarity carries card-by-card without five headings breaking the page into
+   five short lists.
+   The track floor matches .grid, the collection's own card grid further down
+   the page, so the two read as the same object at every width instead of
+   breaking to a different column count on a phone. */
+.cardgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 14px 12px;
+  justify-items: center;
 }
 
 .pulls {
@@ -1141,93 +1080,6 @@ button:disabled {
   }
 }
 
-.odds {
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--bg-2);
-  padding: 16px 18px;
-}
-.odds > summary {
-  cursor: pointer;
-  margin: 0;
-  list-style: none;
-}
-.odds > summary::-webkit-details-marker {
-  display: none;
-}
-.odds > summary::after {
-  content: '+';
-  margin-left: auto;
-  font-family: var(--mono);
-  font-weight: 400;
-  color: var(--muted);
-}
-.odds[open] > summary {
-  margin-bottom: 18px;
-}
-.odds[open] > summary::after {
-  content: '−';
-}
-
-.odds-bars {
-  display: grid;
-  gap: 9px;
-  margin-bottom: 20px;
-}
-.odds-row {
-  display: grid;
-  grid-template-columns: 82px 1fr 58px;
-  align-items: center;
-  gap: 12px;
-}
-.odds-name {
-  justify-self: start;
-}
-.odds-bar {
-  height: 7px;
-  border-radius: 999px;
-  background: var(--bg-3);
-  overflow: hidden;
-}
-.odds-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: currentColor;
-}
-.odds-fill.tier-0 { color: var(--t0); }
-.odds-fill.tier-1 { color: var(--t1); }
-.odds-fill.tier-2 { color: var(--t2); }
-.odds-fill.tier-3 { color: var(--t3); }
-.odds-fill.tier-4 { color: var(--t4); }
-.odds-pct {
-  font-family: var(--mono);
-  font-size: 12px;
-  text-align: right;
-  color: var(--muted);
-}
-
-.odds-proof {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 7px;
-}
-.odds-proof-k {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.9px;
-  color: var(--muted);
-}
-.odds-proof-v {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--purple);
-  word-break: break-all;
-  line-height: 1.5;
-}
-
 /* --- pack sizes, rail, overlay -------------------------------------------- */
 
 .pack-rail {
@@ -1238,44 +1090,175 @@ button:disabled {
 .pack-rail .pack-meta {
   display: none;
 }
+/* The hero size is a token because the tear is drawn at it too. Two literals
+   that must agree is one literal waiting to be changed alone, and the pack
+   would jump to a different size at the exact moment it comes apart. */
+:root {
+  --hero-w: min(74vw, 54dvh * 0.63, 330px);
+}
 .pack-hero {
-  width: min(74vw, 54dvh * 0.63, 330px);
+  width: var(--hero-w);
 }
 
-/* Ten identical packs. Native scroll does the momentum and the snap - the
-   physics a hand expects on a phone is the physics the platform already has.
+/* the pack is the button, so the button has to be nothing at all */
+.pack-hit {
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 10px;
+  display: block;
+}
+.pack-hit:focus-visible {
+  outline: 2px solid var(--purple);
+  outline-offset: 8px;
+}
+.pack-hit:hover:not(:disabled) .pack {
+  transform: translateY(-6px) scale(1.02);
+}
 
-   On a wide screen there is no thumb and no swipe, so the strip is laid out
-   as a strip: centred when it fits, filling the column when it does not.
-   Snapping stays on proximity here - mandatory with no lead-in padding has no
-   valid position at scrollLeft 0 and the rail would jump on load. */
+/* --- the tear -------------------------------------------------------------
+
+   One torn edge, shared. Both pieces trace the SAME vertex list across it -
+   the top ends on it, the bottom begins on it - so the two halves mate to the
+   pixel. Change the zigzag in one place or the pack tears into two shapes that
+   do not fit together.
+
+   The clip is on the wrappers, never on .pack: .pack has a border-radius, an
+   overflow:hidden and a transition on transform, and clipping it directly
+   fights all three. */
+.tear {
+  --edge: 4% 19.4%, 11% 21.6%, 19% 18.9%, 27% 21.9%, 35% 19.2%, 43% 22.1%, 51% 19%,
+    59% 21.8%, 67% 18.8%, 75% 21.7%, 83% 19.1%, 91% 21.9%, 96% 19.3%;
+  position: relative;
+  width: var(--hero-w);
+  aspect-ratio: 0.63;
+}
+.tear-piece {
+  position: absolute;
+  inset: 0;
+}
+.tear-piece .pack {
+  width: 100%;
+  height: 100%;
+  /* a 80px cast shadow cut flat along the clip edge reads as a render bug */
+  box-shadow: none;
+}
+/* Both pieces open with the identical run - left edge, the zigzag left to
+   right, right edge - and only then part for their own corners. Traversing the
+   shared edge the same way round in both is not a style choice: come at it
+   backwards from the far corner and the polygon crosses itself into a bowtie. */
+.tear-top {
+  clip-path: polygon(0 19.6%, var(--edge), 100% 19.6%, 100% 0, 0 0);
+  animation: tearTop 0.62s cubic-bezier(0.32, 0, 0.67, 0) both;
+}
+.tear-bottom {
+  clip-path: polygon(0 19.6%, var(--edge), 100% 19.6%, 100% 100%, 0 100%);
+  animation: tearBottom 0.62s cubic-bezier(0.4, 0, 0.6, 1) both;
+}
+/* thrown off, not lifted: it leaves fast and it does not come back */
+@keyframes tearTop {
+  0% {
+    transform: none;
+  }
+  18% {
+    transform: translateY(-2%) rotate(-1.5deg);
+  }
+  100% {
+    transform: translateY(-145%) rotate(-13deg);
+    opacity: 0;
+  }
+}
+/* the bottom half tips back and sinks, clearing the space the cards rise into */
+@keyframes tearBottom {
+  0%,
+  18% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(9%) scale(0.94);
+    opacity: 0;
+  }
+}
+/* the whole light budget: one flash along the torn edge, gone in a fifth of a
+   second. The pack is already foil; glitter over foil reads as a screensaver. */
+.tear-flash {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  top: 20%;
+  height: 34%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgb(var(--purple-rgb) / 0.7) 32%,
+    rgb(var(--purple-rgb) / 0) 70%
+  );
+  animation: tearFlash 0.34s ease-out both;
+}
+@keyframes tearFlash {
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) scaleX(0.3);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-50%) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-50%) scaleX(1.15);
+  }
+}
+
+/* Twenty packs - ten, twice - drifting right to left forever. See Rail in
+   App.tsx for the wrap; what matters here is what is NOT declared.
+
+   No scroll-snap: a strip that never stops has nothing to come to rest on, and
+   the snap would fight the drift for the position on every frame.
+
+   No justify-content: centring only ever applied when the content fit, and a
+   marquee that fits has nothing to scroll. Two sets of ten at 174px each is
+   3480px against a 1008px column, so the strip always overflows - and it has
+   to, because the wrap assumes a set is wider than the viewport.
+
+   scroll-behavior is pinned to auto because the wrap is a jump: inherit smooth
+   from a future page style and every lap would animate across the whole strip
+   in full view. */
 .rail {
   display: flex;
   gap: 16px;
   width: 100%;
   overflow-x: auto;
-  justify-content: safe center;
   padding: 6px 0 14px;
-  scroll-snap-type: x proximity;
+  scroll-behavior: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
+  cursor: grab;
+  /* Always, not only while grabbing: the class lands a frame after the
+     pointerdown that would already have started painting a selection. */
+  user-select: none;
+  -webkit-user-select: none;
 }
-/* the phone keeps the carousel: half a screen of lead-in at each end is what
-   lets the first and last pack come to rest under the thumb, dead centre */
-@media (max-width: 900px) {
-  .rail {
-    justify-content: flex-start;
-    padding: 6px calc(50% - 79px) 14px;
-    scroll-snap-type: x mandatory;
-  }
+.rail-grabbing,
+/* the packs are buttons and carry cursor: pointer, which is what wins under
+   the cursor mid-drag unless the grabbing hand is pushed onto them too */
+.rail-grabbing .rail-item {
+  cursor: grabbing;
+}
+/* the strip is held by hand, so nothing in it should start a native image drag */
+.rail-item,
+.rail-item * {
+  -webkit-user-drag: none;
 }
 .rail::-webkit-scrollbar {
   display: none;
 }
 .rail-item {
   flex: 0 0 auto;
-  scroll-snap-align: center;
   padding: 0;
   border: 0;
   background: none;
@@ -1304,6 +1287,11 @@ button:disabled {
   -webkit-backdrop-filter: blur(22px) saturate(0.85);
   backdrop-filter: blur(22px) saturate(0.85);
   animation: overlayIn 0.22s ease both;
+  /* The pack is capped against dvh and never overflows; the three revealed
+     cards, their heading and their actions are not, and on a landscape phone
+     that stack is taller than the screen. place-items:center would then clip
+     it at BOTH ends with no way to reach either. */
+  overflow-y: auto;
 }
 @keyframes overlayIn {
   from {
@@ -1316,6 +1304,9 @@ button:disabled {
   align-items: center;
   gap: 22px;
   animation: overlayPack 0.28s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  /* centres while it fits, pins to the top once it does not - which is the one
+     thing place-items:center cannot do, and auto margins outrank it */
+  margin: auto;
 }
 @keyframes overlayPack {
   from {
@@ -1344,6 +1335,11 @@ button:disabled {
   font-size: 14px;
   text-align: center;
   min-height: 18px;
+  /* the spinner sits inline with the state text while a rip is in flight */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
 }
 
 .pack-kicker {
@@ -1354,4 +1350,93 @@ button:disabled {
   color: rgba(255, 255, 255, 0.86);
   text-shadow: 0 1px 3px rgba(8, 5, 22, 0.9), 0 0 8px rgba(8, 5, 22, 0.7);
   margin-bottom: 4cqw;
+}
+
+/* --- sign in -------------------------------------------------------------
+ *
+ * Deliberately quiet. Signing in is the optional path - the loud control on
+ * this screen is the one that opens a pack, and a bright "connect wallet"
+ * button next to it would read as the thing to press first. It sits at the
+ * weight of the balance chip beside it, not above it.
+ */
+.signin {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.signin:hover:not(:disabled) {
+  color: var(--vault);
+  border-color: var(--vault);
+}
+.signin:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.signin.on {
+  color: var(--vault);
+  border-color: rgb(var(--vault-rgb) / 0.4);
+}
+.signin-addr {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.signin-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--vault);
+  box-shadow: 0 0 0 3px rgb(var(--vault-rgb) / 0.16);
+  flex: none;
+}
+/* The shared .spin is sized for buttons; in the chip it needs to be small. */
+.signin .spin {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion
+
+   The tear is skipped entirely in App.tsx rather than being flattened here -
+   an animation with no duration never fires animationend, and the stage that
+   waits on it would sit on a torn pack forever. What is left to do here is the
+   ambient motion: the drifting rail is already stopped in JS, so these are the
+   loops and entrances that CSS owns alone.
+--------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .reveal-card,
+  .overlay,
+  .overlay-inner {
+    animation-duration: 0.01ms;
+    animation-delay: 0ms !important;
+  }
+  /* the cards still need to arrive, just without the flight */
+  .reveal-card {
+    animation: revealPlain 0.2s ease both;
+  }
+  @keyframes revealPlain {
+    from {
+      opacity: 0;
+    }
+  }
+  /* a pack that shakes or pulses for seconds on end is the worst of it */
+  .pack-busy,
+  .pack-sealed {
+    animation: none;
+  }
+  .pack-hit:hover:not(:disabled) .pack {
+    transform: none;
+  }
 }

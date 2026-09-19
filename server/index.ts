@@ -18,8 +18,15 @@ import express from 'express'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { formatEther, parseAbiItem, type Address, type Hex } from 'viem'
-import { publicClient, chain, rpcUrl, EXPLORER } from '../src/lib/chain.js'
+import {
+  encodePacked,
+  formatEther,
+  keccak256,
+  parseAbiItem,
+  type Address,
+  type Hex,
+} from 'viem'
+import { publicClient, chain, rpcUrl, EXPLORER, withRetry } from '../src/lib/chain.js'
 import {
   CATALOGUE,
   CATALOGUE_SOURCE,
@@ -64,6 +71,9 @@ const deployment = existsSync(join(root, 'deployments.json'))
       contracts: { RipCards: '0x0000000000000000000000000000000000000000' },
     }
 const contractAddress = deployment.contracts.RipCards as Address
+const RIP_ABI = existsSync(join(root, 'artifacts/RipCards.json'))
+  ? readJson('artifacts/RipCards.json').abi
+  : []
 
 const pool: { privateKey: Hex; address: Address }[] = existsSync(join(root, 'wallets.json'))
   ? readJson('wallets.json').wallets
@@ -95,6 +105,13 @@ interface Pull {
 
 const feed: Pull[] = []
 const FEED_MAX = 60
+
+/**
+ * Per-address deck cache for /api/cards. Declared here rather than beside its
+ * route because the indexer invalidates it: a wallet that just revealed a pack
+ * must not be served the deck it had three seconds ago.
+ */
+const cardsCache = new Map<string, { value: unknown[]; at: number }>()
 /** Transaction timestamps in a rolling window, for the live throughput gauge. */
 let txTimes: number[] = []
 const stats = {
@@ -219,6 +236,8 @@ async function tick() {
       } else if (name === 'Redeemed') {
         stats.redemptions++
         txTimes.push(Date.now())
+        // redeem burns the token, so the holder's deck is one card shorter
+        cardsCache.delete(String(args.holder).toLowerCase())
         broadcast('redeemed', {
           vaultRef: Number(args.vaultRef),
           tokenId: String(args.tokenId),
@@ -235,6 +254,10 @@ async function tick() {
         stats.cardsMinted++
         if (vaultRef > 0) stats.vaultedPulls++
         if (tier === 4) stats.grails++
+        // This owner's deck just changed, so drop the cached copy. Without
+        // this, a client reconciling right after its own reveal is handed the
+        // pre-reveal deck and the new cards look like they never landed.
+        cardsCache.delete(String(args.owner).toLowerCase())
         fresh.push({
           tokenId: String(args.tokenId),
           owner: args.owner as Address,
@@ -385,6 +408,7 @@ app.get('/api/feed', (_req, res) => res.json({ feed, stats: snapshot() }))
  * phones does not turn into a room full of eth_getBalance calls.
  */
 const balanceCache = new Map<string, { value: string; at: number }>()
+
 app.get('/api/balance/:address', async (req, res) => {
   if (DEMO) return res.json({ balance: '5000000000000000000' })
   const address = req.params.address.toLowerCase() as Address
@@ -423,6 +447,127 @@ app.get('/api/pending/:address', async (req, res) => {
       cards: Number(balance),
       sealed: commitBlock !== 0n,
     })
+  } catch (e) {
+    res.status(502).json({ error: (e as Error).message })
+  }
+})
+
+/**
+ * The cards an address actually owns, read from the chain.
+ *
+ * This is what makes a deck survive a reload, and what makes signing in mean
+ * anything: until now the grid was derived purely from the live feed, which is
+ * the last 60 pulls in the ROOM. Reload, or sign in with a wallet that ripped
+ * yesterday, and your cards were simply gone - not moved, not sold, just never
+ * looked up.
+ *
+ * There is no ERC721Enumerable here, but there does not need to be. Token ids
+ * are `keccak256(buyer, packNonce, slot)` and nothing about that needs a node:
+ *
+ *   buyPack sets packNonce = packsBought, then stores packsBought + 1
+ *   revealPack mints slots 0..2 under that same nonce
+ *
+ * so the ids a wallet can possibly own are exactly nonces 0..packsBought-1
+ * across three slots, computed locally for zero RPC calls. The chain is then
+ * asked one question about each: who owns it now.
+ *
+ * Every failure mode collapses into the same answer. A sealed-but-unrevealed
+ * pack has no token yet; a pack that expired and was refunded leaves a gap in
+ * the nonces (refundExpiredPack clears the commit but keeps the counter); a
+ * redeemed card is burned. All three make ownerOf revert, and `allowFailure`
+ * turns that into "not in the deck" without a special case.
+ *
+ * ownerOf is the filter, deliberately - _burn zeroes the owner but leaves
+ * card[tokenId] populated, so filtering on cardOf would keep redeemed cards in
+ * the grid with a live redeem button on them.
+ *
+ * Cost: two RPC round trips regardless of deck size.
+ */
+const CARDS_PER_PACK = 3
+/** Ids per multicall. A bot wallet holds hundreds; one giant eth_call would hit the gas cap. */
+const OWNER_BATCH = 50
+
+app.get('/api/cards/:address', async (req, res) => {
+  if (DEMO) return res.json({ cards: [] })
+  const address = req.params.address.toLowerCase() as Address
+
+  const hit = cardsCache.get(address)
+  if (hit && Date.now() - hit.at < 3000) return res.json({ cards: hit.value })
+
+  try {
+    const [, packsBought] = (await withRetry(() =>
+      pub.readContract({
+        address: contractAddress,
+        abi: RIP_ABI,
+        functionName: 'userState',
+        args: [address],
+      }),
+    )) as [bigint, bigint, boolean, bigint]
+
+    const ids: bigint[] = []
+    for (let nonce = 0n; nonce < packsBought; nonce++) {
+      for (let slot = 0n; slot < BigInt(CARDS_PER_PACK); slot++) {
+        ids.push(
+          BigInt(keccak256(encodePacked(['address', 'uint64', 'uint256'], [address, nonce, slot]))),
+        )
+      }
+    }
+    if (!ids.length) {
+      cardsCache.set(address, { value: [], at: Date.now() })
+      return res.json({ cards: [] })
+    }
+
+    const cards: Pull[] = []
+    for (let i = 0; i < ids.length; i += OWNER_BATCH) {
+      const chunk = ids.slice(i, i + OWNER_BATCH)
+      // The ABI is read from JSON at runtime, so viem cannot infer per-call
+      // result types here. The shape is still checked where it is destructured.
+      type MulticallResult =
+        | { status: 'success'; result: unknown }
+        | { status: 'failure'; error: unknown }
+      const results = (await withRetry(() =>
+        pub.multicall({
+          allowFailure: true,
+          contracts: chunk.flatMap((tokenId) => [
+            { address: contractAddress, abi: RIP_ABI, functionName: 'ownerOf', args: [tokenId] },
+            { address: contractAddress, abi: RIP_ABI, functionName: 'cardOf', args: [tokenId] },
+          ]),
+        } as never),
+      )) as unknown as MulticallResult[]
+
+      chunk.forEach((tokenId, k) => {
+        const owner = results[k * 2]
+        const meta = results[k * 2 + 1]
+        if (owner?.status !== 'success' || meta?.status !== 'success') return
+        if (String(owner.result).toLowerCase() !== address) return
+
+        const [tier, cardIndex, grade, serial, mintedAt, vaultRef] = meta.result as [
+          number, number, number, number, bigint, number,
+        ]
+        const def = cardDef(Number(tier), Number(cardIndex))
+        cards.push({
+          tokenId: String(tokenId),
+          owner: address,
+          tier: Number(tier),
+          cardIndex: Number(cardIndex),
+          grade: Number(grade),
+          serial: Number(serial),
+          vaultRef: Number(vaultRef),
+          name: def.name,
+          set: def.set,
+          marketRaw: def.marketRaw,
+          // A chain read carries no log, so there is no block or tx to cite.
+          // The same sentinel demo mode already uses, rather than widening Pull.
+          blockNumber: 0,
+          txHash: ('0x' + '0'.repeat(64)) as Hex,
+          at: Number(mintedAt) * 1000,
+        })
+      })
+    }
+
+    cards.sort((a, b) => b.at - a.at)
+    cardsCache.set(address, { value: cards, at: Date.now() })
+    res.json({ cards })
   } catch (e) {
     res.status(502).json({ error: (e as Error).message })
   }

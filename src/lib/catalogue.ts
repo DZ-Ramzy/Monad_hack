@@ -97,10 +97,6 @@ export function cardImage(def: CardDef, size: 'sm' | 'lg' = 'sm'): string {
   return `/cards/${size === 'lg' ? (def.imageLarge ?? def.image) : def.image}`
 }
 
-export function setSymbol(def: CardDef): string | undefined {
-  return def.symbol ? `/cards/${def.symbol}` : undefined
-}
-
 /**
  * Canonical serialisation, hashed into `catalogueRoot` onchain.
  *

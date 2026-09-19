@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BaseError, encodeFunctionData, formatEther, type Address, type Hex } from 'viem'
 import ripAbi from '../artifacts/RipCards.json'
 import { CardArt } from './components/CardArt'
-import { LatestPulls, OddsPanel, WhatsInside } from './components/sections'
+import { LatestPulls, WhatsInside } from './components/sections'
 import { TIER_NAMES } from './lib/catalogue'
 import { drawPack } from './lib/draw'
 import { useLive, waitForBlock, type Pull, type Stats } from './lib/live'
@@ -30,6 +30,9 @@ export default function App() {
   const [collection, setCollection] = useState<Pull[]>([])
   const [latency, setLatency] = useState<number | null>(null)
   const [lastTx, setLastTx] = useState<Hex | null>(null)
+  /** A pack is held up to the light. Raised by <PackView/> so the page under
+   *  the overlay can stand down - see the render below. */
+  const [packOpen, setPackOpen] = useState(false)
 
   const { feed, stats, connected, commits, commitTick } = useLive()
 
@@ -73,11 +76,56 @@ export default function App() {
     [refreshBalance],
   )
 
+  // A slow heartbeat, so the chip also reflects money that arrived outside a
+  // rip - a sign-in top-up landing a block later, a buyback, another device.
+  // The endpoint is cached server-side, so this costs the RPC nothing; finer
+  // than this would just be a tax on the room.
   useEffect(() => {
-    if (signer) refreshBalance(signer.address)
+    if (!signer) return
+    const { address } = signer
+    refreshBalance(address)
+    const id = setInterval(() => refreshBalance(address), 12_000)
+    return () => clearInterval(id)
   }, [signer, refreshBalance])
 
-  // keep the personal collection in sync with whatever the indexer has seen
+  // The deck is whatever the CHAIN says this wallet owns.
+  //
+  // It used to be derived purely from the live feed, which is the last 60
+  // pulls in the room. That made the grid a view of the session rather than of
+  // the wallet: reload the page and your cards were gone, sign in with a
+  // wallet that ripped yesterday and it looked empty. Nothing had moved - they
+  // were simply never looked up.
+  //
+  // Cards also belong to a wallet, not to the session, so this reruns whenever
+  // the live wallet changes - signing in, signing out, a burner rotating.
+  // Leaving the previous wallet's cards on screen would offer a redeem button
+  // that can only revert, and on Monad a revert still pays its full gas limit.
+  const loadCards = useCallback(async (address: Address, isStale?: () => boolean) => {
+    const owned = await readCards(address)
+    // The wallet can be swapped while this is in flight, and a reveal can land
+    // through the feed meanwhile. Drop the first, keep the second: union by
+    // tokenId rather than replacing outright.
+    if (!owned || isStale?.()) return
+    setCollection((prev) => {
+      const seen = new Set(prev.map((c) => c.tokenId))
+      return [...prev, ...owned.filter((c) => !seen.has(c.tokenId))]
+    })
+  }, [])
+
+  useEffect(() => {
+    const address = signer?.address
+    if (!address) return
+    let stale = false
+    setCollection([])
+    loadCards(address, () => stale)
+    return () => {
+      stale = true
+    }
+  }, [signer?.address, loadCards])
+
+  // The feed is a latency optimisation on top of the chain read above, not a
+  // second source of truth: it puts a card on screen the instant the indexer
+  // sees it, rather than waiting for the next deck reload.
   useEffect(() => {
     if (!signer) return
     const mine = feed.filter((p) => p.owner.toLowerCase() === signer.address.toLowerCase())
@@ -232,12 +280,17 @@ export default function App() {
       setReveal(pulls)
       setPhase('revealed')
       refreshBalance(active.address)
+      // The feed has already put these on screen, so this is not what makes
+      // the reveal feel fast - it is the backstop. waitForPulls resolves on
+      // whatever the indexer saw, and a dropped tick would otherwise leave a
+      // card minted on chain but missing from the deck until a reload.
+      loadCards(active.address)
     } catch (e) {
       active.resetNonce()
       setError(friendlyError(e))
       setPhase('idle')
     }
-  }, [signer, config, stats, refreshBalance, rotateBurner])
+  }, [signer, config, stats, refreshBalance, rotateBurner, loadCards])
 
   const redeem = useCallback(
     async (pull: Pull) => {
@@ -272,7 +325,20 @@ export default function App() {
     [signer, stats, config],
   )
 
+  /* The overlay is fixed, so the document behind it keeps its own scroll: a
+     wheel over a pack scrolls a page nobody can see, and comes back to it on
+     close. Pin the body for as long as the pack is up. */
+  useEffect(() => {
+    if (!packOpen) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [packOpen])
+
   const busy = phase === 'sealing' || phase === 'sealed' || phase === 'ripping'
+
   const packPrice = config ? formatEther(BigInt(config.packPrice)) : '-'
   const vaultedCount = useMemo(() => collection.filter((c) => c.vaultRef > 0).length, [collection])
 
@@ -289,72 +355,79 @@ export default function App() {
         <div className="top-right">
           <div className="chip">
             <span className="chip-k">balance</span>
-            <span className="chip-v">{Number(formatEther(balance)).toFixed(3)} MON</span>
+            <span className="chip-v">{shownBalance(balance)} MON</span>
           </div>
           <div className={`dot ${connected ? 'on' : 'off'}`} title={connected ? 'live' : 'reconnecting'} />
         </div>
       </header>
 
       <main className="stage">
-        {phase === 'revealed' && reveal.length > 0 ? (
-          <RevealView
-            pulls={reveal}
-            latency={latency}
-            explorer={config!.explorer}
-            txHash={lastTx}
-            onAgain={() => {
-              setPhase('idle')
-              setReveal([])
-            }}
-          />
-        ) : (
-          <PackView phase={phase} onRip={rip} busy={busy} packPrice={packPrice} error={error} />
-        )}
+        {/* The reveal happens inside the pack overlay now - the pack tears and
+            the cards come out of where it stood - so PackView stays mounted
+            through 'revealed' rather than being swapped out from under it. */}
+        <PackView
+          phase={phase}
+          onRip={rip}
+          busy={busy}
+          packPrice={packPrice}
+          error={error}
+          pulls={reveal}
+          latency={latency}
+          explorer={config!.explorer}
+          txHash={lastTx}
+          onAgain={() => {
+            setPhase('idle')
+            setReveal([])
+          }}
+          onOpenChange={setPackOpen}
+        />
 
         {error && <p className="err">{error}</p>}
       </main>
 
-      {collection.length > 0 && phase !== 'revealed' && (
-        <section className="collection">
-          <h2>
-            your cards <span className="muted">{collection.length}</span>
-            {vaultedCount > 0 && <span className="pill">{vaultedCount} redeemable</span>}
-          </h2>
-          <div className="grid">
-            {collection.map((p) => (
-              <div key={p.tokenId} className="grid-item">
-                <CardArt {...p} size="sm" />
-                {p.vaultRef > 0 && (
-                  <button className="redeem" onClick={() => redeem(p)}>
-                    redeem physical
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {phase !== 'revealed' && (
+      {/* Open a pack and the pack is the whole screen. The lists below are the
+          lobby - your cards, the set, what other people are pulling - and none
+          of it belongs behind a pack that is about to be torn. They come back
+          when the overlay shuts, your cards one richer. */}
+      {!packOpen && (
         <>
+          {collection.length > 0 && (
+            <section className="collection">
+              <h2>
+                your cards <span className="muted">{collection.length}</span>
+                {vaultedCount > 0 && <span className="pill">{vaultedCount} redeemable</span>}
+              </h2>
+              <div className="grid">
+                {collection.map((p) => (
+                  <div key={p.tokenId} className="grid-item">
+                    <CardArt {...p} size="sm" />
+                    {p.vaultRef > 0 && (
+                      <button className="redeem" onClick={() => redeem(p)}>
+                        redeem physical
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <WhatsInside />
           <LatestPulls feed={feed} />
-          {config && (
-            <OddsPanel
-              explorer={config.explorer}
-              contract={config.contract}
-              catalogueRoot={config.catalogueRoot}
-            />
-          )}
+
+          {/* Nothing but the wordmark, at the size of the page. It is SVG
+              rather than a heading because textLength pins the word to the box:
+              the mark bleeds the full width at every viewport instead of
+              leaving a gutter that moves with whatever font actually loaded. */}
+          <footer className="foot">
+            <svg className="foot-mark" viewBox="0 0 1000 262" role="img" aria-label="Ripachu">
+              <text x="0" y="200" textLength="1000" lengthAdjust="spacing">
+                Ripachu
+              </text>
+            </svg>
+          </footer>
         </>
       )}
-
-      <footer className="foot">
-        <span>
-          {stats ? `${stats.txTotal.toLocaleString()} tx` : '-'} · {stats?.tps.toFixed(1) ?? '0.0'} tps
-        </span>
-        <span>block {stats?.block.toLocaleString() ?? '-'}</span>
-      </footer>
     </div>
   )
 }
@@ -623,25 +696,264 @@ function Pack({ variant, className = '' }: { variant: 'rail' | 'hero'; className
   )
 }
 
-const RAIL_PACKS = 10
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+const RAIL_PACKS = 10
+/** px per second the strip drifts. A pack and its gap is 174px, so this is one
+ *  pack every four and a half seconds - a drift, not a ride. */
+const RAIL_SPEED = 38
+/** past this many px a gesture was a drag, and the click ending it is not a pick */
+const DRAG_SLOP = 6
+/** how long the drift stays out of the way after a flick or a wheel, so a
+ *  fling's momentum is allowed to run out on its own */
+const RAIL_YIELD_MS = 1000
+
+/**
+ * The rail: ten packs drifting right to left forever, and a mouse can grab the
+ * strip and throw it either way.
+ *
+ * The drift writes scrollLeft on a real scroll container rather than animating a
+ * transform, and that is what lets the behaviours compose: the drift, a mouse
+ * drag, a trackpad swipe and a phone's flick all move the same one number, so a
+ * hand can catch the strip mid-drift with nothing having to hand off between a
+ * transform and a scroll offset. What the drift must not do is write over a
+ * gesture already in flight - a finger's pan and its momentum afterwards are
+ * the platform's to run, so a touch or a wheel buys the hand a second of
+ * silence and the loop keeps off the property until it is up.
+ *
+ * It does not pause on hover. The strip is the width of the page and a desktop
+ * cursor rests over it most of the time, so pausing there is a strip that
+ * mostly does not move.
+ *
+ * The packs are rendered twice and the position is kept modulo one set's width.
+ * Set two is pixel-identical to set one, so the wrap is invisible wherever it
+ * lands. That width is measured off the DOM - the distance from a pack to its
+ * twin - so the gap between them never has to be restated here.
+ */
+function Rail({
+  selected,
+  onSelect,
+  paused,
+}: {
+  selected: number | null
+  onSelect: (i: number) => void
+  paused: boolean
+}) {
+  const track = useRef<HTMLDivElement>(null)
+  /** The drift's own position, in float px. Never read back off the element. */
+  const pos = useRef(0)
+  const drag = useRef<{ x: number; from: number } | null>(null)
+  const moved = useRef(0)
+  /** while a hand still owns the strip: a pan, a fling's momentum, a wheel */
+  const idleUntil = useRef(0)
+  const [grabbing, setGrabbing] = useState(false)
+
+  const yieldToHand = () => (idleUntil.current = performance.now() + RAIL_YIELD_MS)
+
+  /** One set's width: the distance from the first pack to its twin. */
+  const setWidth = () => {
+    const kids = track.current?.children
+    const a = kids?.[0] as HTMLElement | undefined
+    const b = kids?.[RAIL_PACKS] as HTMLElement | undefined
+    return a && b ? b.offsetLeft - a.offsetLeft : 0
+  }
+
+  useEffect(() => {
+    if (paused || reducedMotion()) return
+
+    let raf = 0
+    let last = performance.now()
+    const step = (now: number) => {
+      // a backgrounded tab resumes with a delta of seconds; clamp it or the
+      // strip lurches most of a set on the first frame back
+      const dt = Math.min(now - last, 100)
+      last = now
+      const el = track.current
+      if (el && !drag.current && now >= idleUntil.current) {
+        const w = setWidth()
+        // The position is accumulated here rather than read back off the
+        // element. At 38px a second a frame is 0.63px, and not every engine
+        // keeps a fractional scroll offset - one that rounds the read would
+        // either never move the strip at all or move it at twice the speed,
+        // depending on which way it went. Only the write is allowed to round.
+        pos.current += (RAIL_SPEED * dt) / 1000
+        if (w > 0 && pos.current >= w) pos.current -= w
+        el.scrollLeft = pos.current
+      }
+      raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [paused])
+
+  // Wraps a wheel, a trackpad swipe and a fling, which all move scrollLeft
+  // behind the loop's back. It runs only inside the window those gestures buy,
+  // because the drift wraps its own position and the two must not both write.
+  //
+  // Landing on w - 1 rather than w matters: w would test as out of range again
+  // on the scroll event this write itself fires, and the two bounds would
+  // volley the strip back and forth forever.
+  const onScroll = () => {
+    const el = track.current
+    if (!el || drag.current || performance.now() >= idleUntil.current) return
+    const w = setWidth()
+    if (w <= 0) return
+    if (el.scrollLeft >= w) el.scrollLeft -= w
+    else if (el.scrollLeft <= 0) el.scrollLeft = w - 1
+    pos.current = el.scrollLeft
+  }
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // before the guard: a mouse drag that ended off a pack leaves this set, and
+    // on a hybrid laptop the next tap would be swallowed as a drag
+    moved.current = 0
+    if (e.pointerType !== 'mouse' || !track.current) return
+    drag.current = { x: e.clientX, from: track.current.scrollLeft }
+    setGrabbing(true)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current
+    const el = track.current
+    if (!d || !el) return
+    const dx = e.clientX - d.x
+    moved.current = Math.max(moved.current, Math.abs(dx))
+    // Wrapped here rather than left to the scroller: scrollLeft clamps at zero,
+    // so dragging the strip backwards would hit a wall one set in. A modulo has
+    // no wall, and every landing is a pixel-identical pack either way.
+    const w = setWidth()
+    const next = d.from - dx
+    el.scrollLeft = w > 0 ? ((next % w) + w) % w : next
+    // the drift picks up from where the hand let go, not from where it was
+    pos.current = el.scrollLeft
+  }
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return
+    drag.current = null
+    setGrabbing(false)
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+  }
+
+  return (
+    <div
+      ref={track}
+      className={`rail${grabbing ? ' rail-grabbing' : ''}`}
+      onScroll={onScroll}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      // A pan and the momentum after it belong to the platform. Pointer events
+      // cannot mark that window - the browser fires pointercancel the moment a
+      // touch becomes a scroll, which would read as the gesture ending - so the
+      // touch and wheel events are taken directly, each one buying another
+      // second of silence from the drift.
+      onTouchStart={yieldToHand}
+      onTouchMove={yieldToHand}
+      onTouchEnd={yieldToHand}
+      onWheel={yieldToHand}
+      // a drag that happens to end over a pack is still a drag, not a pick
+      onClickCapture={(e) => {
+        if (moved.current > DRAG_SLOP) {
+          e.preventDefault()
+          e.stopPropagation()
+          moved.current = 0
+        }
+      }}
+    >
+      {Array.from({ length: RAIL_PACKS * 2 }, (_, i) => {
+        const pack = i % RAIL_PACKS
+        const twin = i >= RAIL_PACKS
+        return (
+          <button
+            key={i}
+            className={`rail-item${selected === pack ? ' rail-item-on' : ''}`}
+            onClick={() => onSelect(pack)}
+            // set two is the same ten packs again: one of each is all a reader
+            // and the tab order should ever see
+            aria-hidden={twin || undefined}
+            tabIndex={twin ? -1 : undefined}
+            aria-label={`Pack ${pack + 1}`}
+          >
+            <Pack variant="rail" />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * Picking a pack, opening it, and the cards that come out - one overlay, three
+ * stages, no page change between them.
+ *
+ * The stage is derived from `phase` rather than tracked alongside it, with one
+ * exception: 'tearing'. The chain says when the cards exist; it does not say
+ * when the animation showing them has finished, and the cards must not appear
+ * until the pack they came out of is off the screen.
+ */
 function PackView({
   phase,
   onRip,
   busy,
   packPrice,
   error,
+  pulls,
+  latency,
+  explorer,
+  txHash,
+  onAgain,
+  onOpenChange,
 }: {
   phase: Phase
   onRip: () => void
   busy: boolean
   packPrice: string
   error: string | null
+  pulls: Pull[]
+  latency: number | null
+  explorer: string
+  txHash: Hex | null
+  onAgain: () => void
+  onOpenChange: (open: boolean) => void
 }) {
   // Which pack is held up to the light. Picking one is a pure UI step - the
   // packs are identical, the draw happens onchain - but it is the step that
   // makes the choice feel like yours.
   const [selected, setSelected] = useState<number | null>(null)
+  const [stage, setStage] = useState<'pack' | 'tearing' | 'cards'>('pack')
+
+  const revealed = phase === 'revealed' && pulls.length > 0
+
+  // Tell App whether the overlay is up. Every route out of a pack - close, the
+  // error effect below, a finished rip - goes through `selected`, so watching
+  // it is enough; onOpenChange is a setState and never changes identity.
+  useEffect(() => {
+    onOpenChange(selected !== null)
+  }, [selected, onOpenChange])
+
+  // onAgain is an inline arrow in App, so it is a new function every render.
+  // In the deps below it would rerun the effect on every render and knock the
+  // stage back from 'cards' to 'tearing'; through a ref it cannot.
+  const onAgainRef = useRef(onAgain)
+  onAgainRef.current = onAgain
+
+  useEffect(() => {
+    if (!revealed) return setStage('pack')
+    // A rip can finish with the overlay already shut - an error raised
+    // somewhere else closes it while the transaction is still in flight. There
+    // is nothing mounted to tear, so the tear would never end and the stage
+    // would stick; retire the pull instead. The cards are in the collection
+    // either way, so nothing is lost.
+    if (selected === null) return onAgainRef.current()
+    // Nothing animates under reduced motion, so the animationend that would
+    // advance the tear never fires and the stage would stick on a torn pack.
+    setStage(reducedMotion() ? 'cards' : 'tearing')
+  }, [revealed, selected])
 
   const caption =
     phase === 'sealing'
@@ -650,45 +962,45 @@ function PackView({
         ? 'waiting for a block nobody has seen'
         : phase === 'ripping'
           ? 'ripping'
-          : 'three cards · published odds · onchain draw'
+          : `tap the pack to open · ${packPrice} MON`
 
   // a failed rip has to be readable, and the overlay sits on top of the notice
   useEffect(() => {
     if (error) setSelected(null)
   }, [error])
 
+  /** Shutting the overlay on a finished rip has to retire the pack too, or the
+   *  phase stays 'revealed' behind a closed overlay and the rail is dead. */
+  const close = useCallback(() => {
+    setSelected(null)
+    if (phase === 'revealed') onAgain()
+  }, [phase, onAgain])
+
+  // the tear is short and uninterruptible - there is nothing to escape from yet
+  const locked = busy || stage === 'tearing'
+
+  const pick = (i: number) => setSelected(i)
+
   useEffect(() => {
-    if (selected === null || busy) return
+    if (selected === null || locked) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelected(null)
+      if (e.key === 'Escape') close()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, busy])
+  }, [selected, locked, close])
 
   return (
     <div className="packview">
       <h1 className="sr-only">Ripachu Pack</h1>
-      <div className="rail">
-        {Array.from({ length: RAIL_PACKS }, (_, i) => (
-          <button
-            key={i}
-            className={`rail-item${selected === i ? ' rail-item-on' : ''}`}
-            onClick={() => setSelected(i)}
-            aria-label={`Pack ${i + 1}`}
-          >
-            <Pack variant="rail" />
-          </button>
-        ))}
-      </div>
+      <Rail selected={selected} onSelect={pick} paused={selected !== null} />
 
       <div className="packinfo">
-        <div className="packinfo-price">
-          <span className="coin">MON</span>
-          <span className="packinfo-amount">{packPrice}</span>
-        </div>
-
-        <button className="cta cta-open" onClick={() => setSelected(0)} disabled={busy}>
+        <button
+          className="cta cta-open"
+          onClick={() => setSelected(0)}
+          disabled={busy}
+        >
           Open a pack
         </button>
       </div>
@@ -697,29 +1009,86 @@ function PackView({
         <div
           className="overlay"
           onClick={() => {
-            if (!busy) setSelected(null)
+            if (!locked) close()
           }}
         >
           <div className="overlay-inner" onClick={(e) => e.stopPropagation()}>
-            <Pack
-              variant="hero"
-              className={`${busy ? 'pack-busy' : ''} ${phase === 'sealed' ? 'pack-sealed' : ''}`}
-            />
+            {stage === 'cards' ? (
+              <RevealView
+                pulls={pulls}
+                latency={latency}
+                explorer={explorer}
+                txHash={txHash}
+                onAgain={close}
+              />
+            ) : stage === 'tearing' ? (
+              <PackTear onDone={() => setStage('cards')} />
+            ) : (
+              <>
+                {/* The pack is the button. A wrapper rather than a handler on
+                    the art itself, so it is one focusable thing with one label
+                    and the keyboard gets the same rip the mouse does. */}
+                <button
+                  className="pack-hit"
+                  onClick={onRip}
+                  disabled={busy}
+                  aria-label={`Open this pack for ${packPrice} MON`}
+                >
+                  <Pack
+                    variant="hero"
+                    className={`${busy ? 'pack-busy' : ''} ${phase === 'sealed' ? 'pack-sealed' : ''}`}
+                  />
+                </button>
 
-            <button className="cta cta-open" onClick={onRip} disabled={busy}>
-              {busy ? <span className="spin" /> : 'Open'}
-            </button>
+                <p className="caption">
+                  {busy && <span className="spin" />}
+                  {caption}
+                </p>
 
-            <p className="caption">{caption}</p>
-
-            {!busy && (
-              <button className="overlay-back" onClick={() => setSelected(null)}>
-                pick another pack
-              </button>
+                {!busy && (
+                  <button className="overlay-back" onClick={close}>
+                    pick another pack
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The pack coming apart.
+ *
+ * Two copies of the same pack, one clipped to everything above a torn edge and
+ * one to everything below it, sharing a single jagged vertex list so the two
+ * pieces mate exactly. The top is thrown off; the bottom tips back and sinks,
+ * clearing the space the cards rise into. A flash at the tear line is the whole
+ * light budget - the pack is already a foil object, and glitter on top of foil
+ * reads as a screensaver.
+ *
+ * The end of the flight is what advances the stage, not a timer, so the
+ * duration lives in the stylesheet alone.
+ */
+function PackTear({ onDone }: { onDone: () => void }) {
+  return (
+    <div className="tear" aria-hidden="true">
+      <div
+        className="tear-piece tear-top"
+        // .pack-foil and the crimps carry their own animations and those bubble
+        // to here; only the piece's own flight means the tear is over
+        onAnimationEnd={(e) => {
+          if (e.target === e.currentTarget) onDone()
+        }}
+      >
+        <Pack variant="hero" />
+      </div>
+      <div className="tear-piece tear-bottom">
+        <Pack variant="hero" />
+      </div>
+      <div className="tear-flash" />
     </div>
   )
 }
@@ -751,7 +1120,7 @@ function RevealView({
 
       <div className="reveal-cards">
         {pulls.map((p, i) => (
-          <div key={p.tokenId} className="reveal-card" style={{ animationDelay: `${i * 140}ms` }}>
+          <div key={p.tokenId} className="reveal-card" style={{ animationDelay: `${i * 120}ms` }}>
             <CardArt {...p} size="lg" />
           </div>
         ))}
@@ -789,6 +1158,22 @@ function Fatal({ message }: { message: string }) {
   )
 }
 
+/**
+ * The burner's balance, for the header chip.
+ *
+ * Truncated, never rounded, and to one more place than the pack price. Round
+ * to three and 0.0009 MON displays as 0.001 MON - the exact price of a pack -
+ * so the screen tells someone they can afford a rip that will be rejected.
+ */
+function shownBalance(wei: bigint): string {
+  // The truncation is the bigint divide, where it is exact. Doing it in float
+  // instead - Math.floor(Number(formatEther(wei)) * 1e4) - reads 0.0003 MON as
+  // 0.0002, because 0.0003 * 1e4 is 2.9999999999999996. What is left is one
+  // divide whose error is ~1e-16, nowhere near the 0.00005 that would move a
+  // digit at four places.
+  return (Number(wei / 10n ** 14n) / 1e4).toFixed(4)
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** The stream publishes '0' until the indexer's first tick lands. */
@@ -806,6 +1191,17 @@ async function readBalance(address: Address): Promise<bigint | null> {
   try {
     const r = await (await fetch(`/api/balance/${address}`)).json()
     return r.stale ? null : BigInt(r.balance)
+  } catch {
+    return null
+  }
+}
+
+/** The cards an address owns, read from the chain by the server. */
+async function readCards(address: Address): Promise<Pull[] | null> {
+  try {
+    const r = await fetch(`/api/cards/${address}`)
+    if (!r.ok) return null
+    return (await r.json()).cards as Pull[]
   } catch {
     return null
   }
@@ -847,6 +1243,14 @@ function friendlyError(e: unknown): string {
   }
   if (/pool exhausted|pool is out of MON/i.test(m)) {
     return 'every funded burner is claimed — top the pool up'
+  }
+  // A signed-in wallet can refuse a transaction. A burner never does, so these
+  // only appear once somebody has connected an external wallet.
+  if (/user rejected|denied transaction|request rejected|4001/i.test(m)) {
+    return 'you turned that transaction down'
+  }
+  if (/chain|network/i.test(m) && /switch|mismatch|unsupported/i.test(m)) {
+    return 'switch your wallet to Monad testnet and try again'
   }
   if (/PackAlreadyPending/i.test(m)) return 'a pack is already sealed — reveal it first'
   if (/RevealTooEarly/i.test(m)) return 'too early, the fairness block has not landed yet'
