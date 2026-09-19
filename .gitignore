@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+wallets.json
+vault.json
+.claimed.json
+public/vault/*.jpg
+public/vault/*.png
+.DS_Store

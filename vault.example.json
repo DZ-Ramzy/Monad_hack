@@ -1,0 +1,12 @@
+[
+  {
+    "label": "The real card in my pocket. Copy this file to vault.json and edit.",
+    "tier": 0,
+    "cardIndex": 4,
+    "grade": 0,
+    "certNumber": 1,
+    "photo": "public/vault/card-1.jpg",
+    "declaration": "Held by Ramzy at Monad Blitz Paris, 2026-09-19. Handed over on redemption.",
+    "quoteMon": "0.05"
+  }
+]

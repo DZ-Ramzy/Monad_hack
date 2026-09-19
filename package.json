@@ -1,0 +1,43 @@
+{
+  "name": "rip-on-monad",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Provably fair gacha for vaulted, redeemable trading cards on Monad",
+  "scripts": {
+    "dev": "concurrently -n server,web -c magenta,cyan \"tsx watch server/index.ts\" \"vite\"",
+    "build": "vite build",
+    "start": "tsx server/index.ts",
+    "serve": "pnpm build && pnpm start",
+    "typecheck": "tsc --noEmit",
+    "compile": "tsx scripts/compile.ts",
+    "deploy": "tsx scripts/deploy.ts",
+    "test:odds": "tsx scripts/test-odds.ts",
+    "seed:vault": "tsx scripts/seed-vault.ts",
+    "wallets:gen": "tsx scripts/gen-wallets.ts",
+    "wallets:fund": "tsx scripts/fund-wallets.ts",
+    "bots": "tsx scripts/bots.ts",
+    "preflight": "tsx scripts/preflight.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "viem": "^2.21.55"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "dotenv": "^16.4.7",
+    "solc": "0.8.26",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
