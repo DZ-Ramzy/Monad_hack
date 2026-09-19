@@ -116,17 +116,34 @@ export default function App() {
     const since = Date.now()
 
     try {
-      setPhase('sealing')
       const sealedAt = performance.now()
-      await signer.send({
-        data: encodeFunctionData({ abi, functionName: 'buyPack' }),
-        gas: GAS.buyPack,
-        value: BigInt(config.packPrice),
-        gasPrice,
-      })
 
-      const commitBlock = await waitForCommit(signer.address)
-      setPhase('sealed')
+      // A pack may already be sealed — from a reload, or because the indexer
+      // dropped the tick that carried our own commit. The chain always knows,
+      // so the button resumes rather than dead-ending on PackAlreadyPending.
+      const pending = await fetch(`/api/pending/${signer.address}`)
+        .then((r) => r.json())
+        .catch(() => null)
+
+      let commitBlock: number
+      if (pending?.sealed) {
+        commitBlock = pending.commitBlock
+        setPhase('sealed')
+      } else {
+        setPhase('sealing')
+        await signer.send({
+          data: encodeFunctionData({ abi, functionName: 'buyPack' }),
+          gas: GAS.buyPack,
+          value: BigInt(config.packPrice),
+          gasPrice,
+        })
+        commitBlock = await waitForCommit(signer.address).catch(async () => {
+          const p = await (await fetch(`/api/pending/${signer.address}`)).json()
+          if (!p.sealed) throw new Error('commit not indexed')
+          return p.commitBlock as number
+        })
+        setPhase('sealed')
+      }
 
       // The pack cannot be opened until a block exists that nobody could see
       // when it was sealed. This is the whole fairness guarantee, and on Monad

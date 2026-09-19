@@ -293,6 +293,31 @@ app.get('/api/balance/:address', async (req, res) => {
   }
 })
 
+/**
+ * Recovery path. If a phone misses its own PackCommitted broadcast - one
+ * dropped indexer tick is enough - it would otherwise sit on a sealed pack
+ * with no way to open it. The chain always knows, so ask the chain.
+ */
+app.get('/api/pending/:address', async (req, res) => {
+  try {
+    const [commitBlock, packsBought, revealable, balance] = (await pub.readContract({
+      address: contractAddress,
+      abi: readJson('artifacts/RipCards.json').abi,
+      functionName: 'userState',
+      args: [req.params.address as Address],
+    })) as [bigint, bigint, boolean, bigint]
+    res.json({
+      commitBlock: Number(commitBlock),
+      packsBought: Number(packsBought),
+      revealable,
+      cards: Number(balance),
+      sealed: commitBlock !== 0n,
+    })
+  } catch (e) {
+    res.status(502).json({ error: (e as Error).message })
+  }
+})
+
 app.get('/api/stream', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
