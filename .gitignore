@@ -7,3 +7,6 @@ vault.json
 public/vault/*.jpg
 public/vault/*.png
 .DS_Store
+forge-out/
+cache/
+broadcast/

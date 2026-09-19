@@ -114,7 +114,8 @@ kill it. So:
 ```bash
 pnpm install
 cp .env.example .env          # add DEPLOYER_PK
-pnpm compile                  # solc-js, no Foundry/Hardhat needed
+pnpm test                     # 49 Foundry tests
+pnpm compile                  # solc-js artifacts for the deploy scripts
 pnpm test:odds                # samples the draw logic, 360k cards
 pnpm deploy                   # writes deployments.json
 
@@ -136,10 +137,42 @@ pnpm bots                     # pre-seed the feed / fallback
 
 ## Tests
 
-`pnpm test:odds` mirrors the contract's draw logic in TypeScript, reproducing
-the exact keccak chain, and samples it. It checks that the tier distribution
-matches the published odds, that every card and every grade is reachable, and
-that derived token ids do not collide.
+```bash
+pnpm test        # 49 Foundry tests
+pnpm test:deep   # the same, with fuzz runs at 20,000
+pnpm test:odds   # samples the draw logic offchain
+```
+
+`forge test` — 49 tests, 0 failures. The ones that carry weight:
+
+**Fairness.** `test_DrawDependsOnPostCommitBlockhash` seals a pack, snapshots,
+reveals against one block hash, rewinds, and reveals against another. The token
+ids must be identical (they are derived) and the cards behind them must differ.
+That is the property the whole product rests on, asserted rather than claimed.
+
+**The bug that was there.** `testFuzz_RevealXorRefund` fuzzes the block offset
+across the entire window and asserts that a ripe pack is *always* exactly one of
+revealable or refundable. `REVEAL_WINDOW` used to be checked only on the refund
+path, which left a range where a sealed pack was neither — the buyer just lost
+it. 20,000 runs.
+
+**The parallelism claim, mechanically.** `test_ConcurrentRipsWriteDisjointSlots`
+records the storage writes of two buyers revealing in the same block and asserts
+the write sets do not intersect at a single slot. If someone later adds a global
+counter, this test fails — which is the point.
+
+**The honest exception.** `test_BindingContendsOnTheVaultPool` asserts the
+opposite for scarce stock: two pulls of the same vaulted card *must* share a
+slot. Scarcity costs contention, and the README should not be able to drift away
+from that quietly.
+
+**The RWA path.** `test_PullBindsToVaultAndTakesSlabGrade` deposits a card with
+a grade the RNG cannot produce, rips until it binds, and asserts the grade came
+from the slab. `test_VaultItemBindsOnlyOnce` drains the pool and confirms later
+pulls mint unbacked rather than double-binding one physical card.
+
+`pnpm test:odds` additionally mirrors the draw logic in TypeScript — reproducing
+the exact keccak chain — and samples it at a scale Foundry would be slow at:
 
 ```
 tier distribution
@@ -149,9 +182,12 @@ tier distribution
   Holo        4.00%  (target  4.00%, drift -0.004)
   Grail       0.98%  (target  1.00%, drift -0.019)
 
-token id collisions: 0 of 360,000
+token id collisions: 0 of 1,200,000
 OK - all checks passed
 ```
+
+Gas, for capacity planning: `disperse` funds 120 wallets in **4.2M gas**, one
+transaction.
 
 ---
 
