@@ -3,6 +3,7 @@ import { encodeFunctionData, formatEther, type Address, type Hex } from 'viem'
 import ripAbi from '../artifacts/RipCards.json'
 import { CardArt } from './components/CardArt'
 import { TIER_NAMES } from './lib/catalogue'
+import { drawPack } from './lib/draw'
 import { useLive, waitForBlock, type Pull, type Stats } from './lib/live'
 import { claimBurner, GAS, Signer, type AppConfig } from './lib/wallet'
 
@@ -112,8 +113,33 @@ export default function App() {
     setReveal([])
     setLatency(null)
 
-    const gasPrice = BigInt(stats.gasPrice || '50000000000')
+    const gasPrice = BigInt(stats.gasPrice || '102000000000')
     const since = Date.now()
+
+    // Demo mode rehearses the exact timing of a real rip - seal, wait for a
+    // block that did not exist yet, reveal - without touching a chain.
+    if (config.demo) {
+      const started = performance.now()
+      setPhase('sealing')
+      await sleep(240)
+      setPhase('sealed')
+      await sleep(520)
+      setPhase('ripping')
+      await sleep(160)
+      const pulls: Pull[] = drawPack(0.12).map((c, i) => ({
+        ...c,
+        tokenId: `${since}-${i}`,
+        owner: signer.address,
+        blockNumber: stats.block,
+        txHash: ('0x' + '0'.repeat(64)) as Hex,
+        at: Date.now(),
+      }))
+      setLatency(Math.round(performance.now() - started))
+      setReveal(pulls)
+      setCollection((prev) => [...pulls, ...prev])
+      setPhase('revealed')
+      return
+    }
 
     try {
       const sealedAt = performance.now()
@@ -146,9 +172,14 @@ export default function App() {
       }
 
       // The pack cannot be opened until a block exists that nobody could see
-      // when it was sealed. This is the whole fairness guarantee, and on Monad
-      // it costs about 800ms.
-      await waitForBlock(statsRef, commitBlock + 2)
+      // when it was sealed. The contract requires 2 blocks; we wait 3.
+      //
+      // The extra block is not caution about the entropy, it is about Monad's
+      // reserve balance rule: an account holding less than the 10 MON reserve -
+      // every burner in this room - gets one balance-dipping transaction per
+      // 3-block window. Commit and reveal back to back inside that window is
+      // how you collect a reserve balance violation on stage.
+      await waitForBlock(statsRef, commitBlock + 3)
 
       setPhase('ripping')
       const tx = await signer.send({
@@ -172,13 +203,17 @@ export default function App() {
 
   const redeem = useCallback(
     async (pull: Pull) => {
-      if (!signer || !stats) return
+      if (!signer || !stats || !config) return
       const ref = window.prompt(
         `Redeem ${pull.name} (${TIER_NAMES[pull.tier]}, PSA ${pull.grade}).\n\n` +
           `This burns the token. The physical card leaves the vault and ships to you.\n\n` +
           `Shipping reference:`,
       )
       if (!ref) return
+      if (config.demo) {
+        setCollection((c) => c.filter((p) => p.tokenId !== pull.tokenId))
+        return
+      }
       try {
         const tx = await signer.send({
           data: encodeFunctionData({
@@ -196,7 +231,7 @@ export default function App() {
         setError(friendlyError(e as Error))
       }
     },
-    [signer, stats],
+    [signer, stats, config],
   )
 
   const busy = phase === 'sealing' || phase === 'sealed' || phase === 'ripping'
@@ -210,7 +245,7 @@ export default function App() {
     <div className="app">
       <header className="top">
         <div className="brand">
-          <span className="brand-mark">RIP</span>
+          <span className="brand-mark">Ripachu</span>
           <span className="brand-sub">vaulted card gacha</span>
         </div>
         <div className="top-right">
@@ -298,7 +333,7 @@ function PackView({
     <div className="packview">
       <div className={`pack ${busy ? 'pack-busy' : ''} ${phase === 'sealed' ? 'pack-sealed' : ''}`}>
         <div className="pack-face">
-          <div className="pack-title">RIP</div>
+          <div className="pack-title">Ripachu</div>
           <div className="pack-meta">3 CARDS</div>
         </div>
         <div className="pack-shine" />
@@ -389,6 +424,8 @@ function Fatal({ message }: { message: string }) {
     </div>
   )
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 function friendlyError(e: Error): string {
   const m = e.message ?? String(e)

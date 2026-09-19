@@ -548,7 +548,7 @@ contract RipCards {
     // Minimal ERC-721
     // -----------------------------------------------------------------------
 
-    function name() external pure returns (string memory) { return "RIP Vaulted Cards"; }
+    function name() external pure returns (string memory) { return "Ripachu Vaulted Cards"; }
     function symbol() external pure returns (string memory) { return "RIP"; }
 
     function balanceOf(address who) external view returns (uint256) { return _balance[who]; }

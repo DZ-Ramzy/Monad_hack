@@ -1,4 +1,6 @@
-# RIP — provably fair gacha for vaulted cards
+# Ripachu — provably fair gacha for vaulted cards
+
+**Gotta rip 'em all.**
 
 Built at Monad Blitz Paris, 19 September 2026.
 

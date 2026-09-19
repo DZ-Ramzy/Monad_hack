@@ -1,0 +1,12 @@
+{
+  "chainId": 10143,
+  "deployedAt": "2026-09-19T11:13:27.244Z",
+  "deployer": "0xC29aAd526780F22be147C6E30076240bD7354Cb7",
+  "packPrice": "1000000000000000",
+  "catalogueRoot": "0x93f8bdad191ec3c14134b349ceb07e99960be923c75add038c677741d68b0cb4",
+  "catalogueBytes": 1326,
+  "contracts": {
+    "RipCards": "0x216746b806ed004b9b4ceec4c6363e3d9683ee37",
+    "Disperse": "0xdc012b4fe43bc0e19570490891217d8bc378ce15"
+  }
+}

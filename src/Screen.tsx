@@ -38,7 +38,7 @@ export default function Screen() {
     <div className="screen">
       <header className="screen-top">
         <div className="brand">
-          <span className="brand-mark">RIP</span>
+          <span className="brand-mark">Ripachu</span>
           <span className="brand-sub">provably fair gacha · vaulted cards · monad</span>
         </div>
         <div className={`dot ${connected ? 'on' : 'off'}`} />

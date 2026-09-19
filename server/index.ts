@@ -21,6 +21,8 @@ import { fileURLToPath } from 'node:url'
 import { formatEther, parseAbiItem, type Address, type Hex } from 'viem'
 import { publicClient, chain, rpcUrl, EXPLORER } from '../src/lib/chain.js'
 import { CATALOGUE, TIER_NAMES, TIER_SIZES, ODDS_CUMULATIVE, cardDef, compValue } from '../src/lib/catalogue.js'
+import { drawPack } from '../src/lib/draw.js'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const readJson = (p: string) => JSON.parse(readFileSync(join(root, p), 'utf8'))
@@ -32,11 +34,28 @@ const CLAIMED_FILE = join(root, '.claimed.json')
 // Deployment + wallet pool
 // ---------------------------------------------------------------------------
 
-if (!existsSync(join(root, 'deployments.json'))) {
-  console.error('deployments.json missing - run `pnpm deploy` first.')
-  process.exit(1)
+/**
+ * Demo mode: run the whole surface without a deployment.
+ *
+ * Useful for rehearsing the pitch without spending testnet MON, and for
+ * working on the UI before the contract is live. Nothing here touches a chain -
+ * the feed is synthesised from the same published odds the contract uses, and
+ * the client simulates the rip locally.
+ */
+const DEMO = process.env.DEMO === '1' || !existsSync(join(root, 'deployments.json'))
+
+if (DEMO && !existsSync(join(root, 'deployments.json'))) {
+  console.warn('no deployments.json - starting in DEMO mode (nothing is onchain)\n')
 }
-const deployment = readJson('deployments.json')
+
+const deployment = existsSync(join(root, 'deployments.json'))
+  ? readJson('deployments.json')
+  : {
+      chainId: chain.id,
+      packPrice: '1000000000000000',
+      catalogueRoot: '0x' + '00'.repeat(32),
+      contracts: { RipCards: '0x0000000000000000000000000000000000000000' },
+    }
 const contractAddress = deployment.contracts.RipCards as Address
 
 const pool: { privateKey: Hex; address: Address }[] = existsSync(join(root, 'wallets.json'))
@@ -232,7 +251,59 @@ async function tick() {
   }
 }
 
-setInterval(tick, 500)
+// ---------------------------------------------------------------------------
+// Demo feed - synthesised from the same published odds the contract uses
+// ---------------------------------------------------------------------------
+
+function demoTick() {
+  const now = Date.now()
+  stats.block += Math.random() < 0.9 ? 1 : 2
+  stats.blockTimeMs = 380 + Math.round(Math.random() * 60)
+  stats.gasPrice = '102000000000'
+
+  const rippers = 1 + Math.floor(Math.random() * 3)
+  const fresh: Pull[] = []
+
+  for (let r = 0; r < rippers; r++) {
+    const owner = ('0x' +
+      Array.from({ length: 40 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(
+        '',
+      )) as Address
+    stats.uniqueRippers.add(owner)
+    stats.packsCommitted++
+    stats.packsRevealed++
+    txTimes.push(now, now)
+
+    for (const c of drawPack(0.1)) {
+      stats.cardsMinted++
+      if (c.vaultRef > 0) stats.vaultedPulls++
+      if (c.tier === 4) stats.grails++
+      fresh.push({
+        ...c,
+        tokenId: String(Math.floor(Math.random() * 1e15)),
+        owner,
+        blockNumber: stats.block,
+        txHash: ('0x' + '0'.repeat(64)) as Hex,
+        at: now,
+      })
+    }
+  }
+
+  feed.unshift(...fresh.reverse())
+  feed.length = Math.min(feed.length, FEED_MAX)
+  broadcast('pulls', fresh)
+
+  const cutoff = now - 10_000
+  if (txTimes.length > 2000) txTimes = txTimes.filter((t) => t > cutoff)
+}
+
+if (DEMO) {
+  stats.block = 63_865_582
+  for (let i = 0; i < 6; i++) demoTick() // start with a populated screen
+  setInterval(demoTick, 420)
+} else {
+  setInterval(tick, 500)
+}
 setInterval(() => broadcast('stats', snapshot()), 1000)
 
 // ---------------------------------------------------------------------------
@@ -244,6 +315,7 @@ app.use(express.json())
 
 app.get('/api/config', (_req, res) => {
   res.json({
+    demo: DEMO,
     chainId: chain.id,
     rpcUrl: rpcUrl(),
     explorer: EXPLORER,
@@ -258,6 +330,10 @@ app.get('/api/config', (_req, res) => {
 })
 
 app.post('/api/claim', (req, res) => {
+  if (DEMO && pool.length === 0) {
+    const privateKey = generatePrivateKey()
+    return res.json({ privateKey, address: privateKeyToAccount(privateKey).address, demo: true })
+  }
   const existing = req.body?.address as string | undefined
   if (existing && claimed[existing.toLowerCase()] !== undefined) {
     const w = pool[claimed[existing.toLowerCase()]]
@@ -281,6 +357,7 @@ app.get('/api/feed', (_req, res) => res.json({ feed, stats: snapshot() }))
  */
 const balanceCache = new Map<string, { value: string; at: number }>()
 app.get('/api/balance/:address', async (req, res) => {
+  if (DEMO) return res.json({ balance: '5000000000000000000' })
   const address = req.params.address.toLowerCase() as Address
   const hit = balanceCache.get(address)
   if (hit && Date.now() - hit.at < 3000) return res.json({ balance: hit.value })
@@ -299,6 +376,7 @@ app.get('/api/balance/:address', async (req, res) => {
  * with no way to open it. The chain always knows, so ask the chain.
  */
 app.get('/api/pending/:address', async (req, res) => {
+  if (DEMO) return res.json({ sealed: false, commitBlock: 0, packsBought: 0, revealable: false, cards: 0 })
   try {
     const [commitBlock, packsBought, revealable, balance] = (await pub.readContract({
       address: contractAddress,
@@ -342,7 +420,7 @@ app.use(express.static(join(root, 'dist')))
 app.get('*', (_req, res) => res.sendFile(join(root, 'dist', 'index.html')))
 
 app.listen(PORT, () => {
-  console.log(`RIP server        http://localhost:${PORT}`)
+  console.log(`Ripachu server        http://localhost:${PORT}${DEMO ? '   [DEMO - nothing is onchain]' : ''}`)
   console.log(`contract          ${contractAddress}`)
   console.log(`pack price        ${formatEther(BigInt(deployment.packPrice))} MON`)
   console.log(`burner pool       ${pool.length} wallets (${Object.keys(claimed).length} claimed)`)

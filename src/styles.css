@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   RIP — Monad palette
+   Ripachu — Monad palette
    purple #836EF9 · blue #200052 · berry #A0055D · off-white #FBFAF9 · black #0E100F
 --------------------------------------------------------------------------- */
 
@@ -162,6 +162,7 @@ button:disabled {
 }
 
 .pack {
+  container-type: inline-size;
   position: relative;
   width: 178px;
   height: 250px;
@@ -187,9 +188,9 @@ button:disabled {
   z-index: 1;
 }
 .pack-title {
-  font-size: 46px;
+  font-size: 30px;
   font-weight: 800;
-  letter-spacing: -2px;
+  letter-spacing: -1px;
 }
 .pack-meta {
   font-family: var(--mono);

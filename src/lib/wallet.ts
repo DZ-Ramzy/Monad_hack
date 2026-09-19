@@ -21,6 +21,8 @@ import { privateKeyToAccount } from 'viem/accounts'
  */
 
 export interface AppConfig {
+  /** True when the server runs without a deployment: the UI rehearses locally. */
+  demo?: boolean
   chainId: number
   rpcUrl: string
   explorer: string
@@ -31,14 +33,36 @@ export interface AppConfig {
 
 const STORAGE_KEY = 'rip.burner.v1'
 
-/** Generous but bounded. Unused gas is refunded; the limit only has to be covered. */
+/**
+ * Gas limits, calibrated against the live contract from a FRESH account.
+ *
+ * Two Monad specifics drive these numbers.
+ *
+ * First, Monad charges the gas LIMIT, not the gas used. A transaction that
+ * reserves 400k and burns 283k pays for 400k, and a reverted transaction pays
+ * its full limit too. Padding limits is not free insurance here the way it is
+ * on Ethereum - it is a direct tax on every wallet in the room.
+ *
+ * Second, and this is the one that nearly ate the demo: estimating against a
+ * wallet that has already ripped gives the WRONG answer. On a fresh account the
+ * pending-pack slot goes zero -> non-zero, which is a 20,000 gas SSTORE instead
+ * of 2,900. Every phone in the room is a fresh account, so those are the only
+ * numbers that matter.
+ *
+ *   eth_estimateGas, fresh account, live contract:
+ *     buyPack      51,915   (34,881 from an account that had ripped before)
+ *     revealPack  283,713   (unbacked pull; binding a vaulted card adds ~35k)
+ *
+ * revealPack carries extra room specifically so the vault-binding path cannot
+ * run out of gas - that pull is the whole point of the demo.
+ */
 export const GAS = {
-  buyPack: 100_000n,
+  buyPack: 62_000n,
   revealPack: 360_000n,
-  redeem: 140_000n,
-  sellBack: 180_000n,
-  list: 90_000n,
-  buy: 140_000n,
+  redeem: 120_000n,
+  sellBack: 160_000n,
+  list: 80_000n,
+  buy: 120_000n,
 } as const
 
 export interface Burner {
@@ -154,8 +178,11 @@ export class Signer {
         gas: opts.gas,
         value: opts.value ?? 0n,
         nonce,
-        maxFeePerGas: (opts.gasPrice * 15n) / 10n,
-        maxPriorityFeePerGas: opts.gasPrice / 10n,
+        // The node reserves maxFeePerGas * gas at admission, so an inflated
+        // multiplier raises the balance every burner needs just to be allowed
+        // to send. Monad's base fee is stable, so 1.15x is ample.
+        maxFeePerGas: (opts.gasPrice * 115n) / 100n,
+        maxPriorityFeePerGas: opts.gasPrice / 50n,
       })
     } catch (err) {
       this.rollback()

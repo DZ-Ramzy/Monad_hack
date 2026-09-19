@@ -32,7 +32,7 @@ const fail = (label: string, detail = '') => {
   failures++
 }
 
-console.log(`\nRIP preflight - ${chain.name} (${chain.id})\n`)
+console.log(`\nRipachu preflight - ${chain.name} (${chain.id})\n`)
 
 // --- rpc -------------------------------------------------------------------
 

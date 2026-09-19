@@ -79,7 +79,7 @@ async function runBot(index: number, pk: Hex) {
     round++
     try {
       const balance = await pub.getBalance({ address: account.address })
-      if (balance < packPrice + gasPrice * 500_000n) {
+      if (balance < packPrice + (gasPrice * 115n * 430_000n) / 100n) {
         console.log(`bot ${index} out of funds (${formatEther(balance)} MON), stopping`)
         return
       }
@@ -88,24 +88,24 @@ async function runBot(index: number, pk: Hex) {
         to: contract,
         data: encodeFunctionData({ abi, functionName: 'buyPack' }),
         value: packPrice,
-        gas: 100_000n,
+        gas: 62_000n,
         nonce: nonce++,
-        maxFeePerGas: (gasPrice * 15n) / 10n,
-        maxPriorityFeePerGas: gasPrice / 10n,
+        maxFeePerGas: (gasPrice * 115n) / 100n,
+        maxPriorityFeePerGas: gasPrice / 50n,
       })
       const commitReceipt = await pub.waitForTransactionReceipt({ hash: commitHash })
       if (commitReceipt.status !== 'success') throw new Error('commit reverted')
 
       // the pack cannot open until a block exists that it could not have seen
-      await waitForBlock(commitReceipt.blockNumber + 2n)
+      await waitForBlock(commitReceipt.blockNumber + 3n)
 
       await wallet.sendTransaction({
         to: contract,
         data: encodeFunctionData({ abi, functionName: 'revealPack' }),
         gas: 360_000n,
         nonce: nonce++,
-        maxFeePerGas: (gasPrice * 15n) / 10n,
-        maxPriorityFeePerGas: gasPrice / 10n,
+        maxFeePerGas: (gasPrice * 115n) / 100n,
+        maxPriorityFeePerGas: gasPrice / 50n,
       })
 
       totals.packs++
